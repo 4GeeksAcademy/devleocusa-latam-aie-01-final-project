@@ -57,6 +57,7 @@ ai-engineering-company-project-template/
 3. **Reemplaza** `CONTEXT.md` con el contexto completo de tu empresa asignada.
 4. **Revisa** los `README.md` de cada carpeta raíz para entender responsabilidades (`apps/`, `data/`, `skills/`, etc.).
 5. **Empieza a implementar** entregables por hito en `apps/`, reutilizando `packages/shared/` y `data/` según corresponda.
+6. npx http-server . -p 3000 -a 0.0.0.0
 
 ---
 
