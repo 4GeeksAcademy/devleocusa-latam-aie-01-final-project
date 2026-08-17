@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.database import init_db
 from src.routes.auth_router import auth_router
 from src.routes.incidents_fastapi_router import incidents_fastapi_router
+from src.routes.inventory import inventory_router
 from src.routes.profiles_router import profiles_router
 from src.routes.suppliers_fastapi_router import suppliers_fastapi_router
 from src.routes.users_router import users_router
@@ -38,6 +39,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(profiles_router)
+app.include_router(inventory_router)
 app.include_router(suppliers_fastapi_router)
 app.include_router(incidents_fastapi_router)
 

@@ -1,8 +1,8 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { Alert } from '../../../components/ui/Alert';
-import { changePassword } from '../../../../services/authApi';
+import { Alert } from '@/app/components/ui/Alert';
+import { changePassword } from '@/services/authApi';
 
 export default function AccountChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');

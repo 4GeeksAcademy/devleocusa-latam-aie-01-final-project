@@ -15,6 +15,10 @@ const navItems: NavItem[] = [
   { href: "/candidaturas", label: "Candidaturas" },
   { href: "/leads", label: "Leads" },
   { href: "/operaciones", label: "Operaciones" },
+  { href: "/backoffice/inventory/products", label: "Productos / SKU" },
+  { href: "/backoffice/inventory/orders", label: "─ Historial de Órdenes" },
+  { href: "/backoffice/inventory/orders/inbound", label: "─ Registrar Entrada" },
+  { href: "/backoffice/inventory/orders/outbound", label: "─ Registrar Salida" },
   { href: "/operaciones/proveedores", label: "Directorio de proveedores" },
   { href: "/operaciones/incidencias", label: "Gestion de incidencias" },
 ];
