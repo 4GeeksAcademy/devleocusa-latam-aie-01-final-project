@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.database import init_db
+from src.env_loader import load_env_if_available
 from src.routes.auth_router import auth_router
 from src.routes.incidents_fastapi_router import incidents_fastapi_router
 from src.routes.inventory import inventory_router
@@ -22,6 +23,7 @@ from src.routes.users_router import users_router
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Create SQLModel tables in Supabase on startup."""
+    load_env_if_available()
     init_db()
     yield
 

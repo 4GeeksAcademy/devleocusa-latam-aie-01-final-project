@@ -90,17 +90,29 @@ def get_carrier_assignments_table() -> Table:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# SQLModel / Supabase (PostgreSQL)
+# SQLModel / Supabase (PostgreSQL) — Lazy engine
 # ─────────────────────────────────────────────────────────────────────────
+# The engine is created on first access (not at import time) so that
+# reloader subprocesses (uvicorn --reload) can initialize cleanly.
 
-_SQL_URL: str | None = os.getenv("SQL_URL")
-if not _SQL_URL:
-    raise RuntimeError(
-        "La variable de entorno SQL_URL es obligatoria para conectar con "
-        "Supabase PostgreSQL. Defínela en el archivo .env"
-    )
+_engine: object | None = None
 
-engine = create_engine(_SQL_URL, echo=False)
+
+def _get_sql_url() -> str:
+    url = os.getenv("SQL_URL")
+    if not url:
+        raise RuntimeError(
+            "La variable de entorno SQL_URL es obligatoria para conectar con "
+            "Supabase PostgreSQL. Defínela en el archivo .env"
+        )
+    return url
+
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        _engine = create_engine(_get_sql_url(), echo=False)
+    return _engine
 
 
 def init_db() -> None:
@@ -116,8 +128,13 @@ def init_db() -> None:
         SupplierTable,
         UserTable,
     )
+    from src.models.models import (  # noqa: F401
+        SKU,
+        SKUEntry,
+        SKUExit,
+    )
 
-    SQLModel.metadata.create_all(engine)
+    SQLModel.metadata.create_all(get_engine())
 
 
 def get_sql_session() -> Generator[Session, None, None]:
@@ -136,5 +153,5 @@ def get_sql_session() -> Generator[Session, None, None]:
     No global session variables are used — each request gets its own
     isolated session.
     """
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         yield session

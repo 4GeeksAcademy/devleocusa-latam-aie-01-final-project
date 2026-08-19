@@ -13,7 +13,7 @@ type Summary = {
   averageSatisfaction: number | null;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_INCIDENTS_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_INCIDENTS_API_BASE_URL ?? "http://localhost:8000";
 
 function formatPercent(value: number, total: number): string {
   if (total === 0) {

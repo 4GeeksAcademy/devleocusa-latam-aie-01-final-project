@@ -46,6 +46,8 @@ services:
       # Bind-mount source code for Next.js hot-reload (HMR)
       - ./uis/website:/app/website
       - ./uis/backoffice:/app/backoffice
+      # Shared src/ folder for cross-project imports (types, utils, etc.)
+      - ./src:/app/src
       # Anonymous volumes: prevent local node_modules from shadowing
       # the container-installed ones. Essential for Linux compatibility.
       - /app/website/node_modules
