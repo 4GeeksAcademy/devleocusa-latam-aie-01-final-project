@@ -13,7 +13,6 @@ from uuid import uuid4
 
 from sqlmodel import Field, SQLModel
 
-from src.database import engine
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -105,5 +104,5 @@ class SKUExit(SQLModel, table=True):
 
 
 # ── Schema initialisation ────────────────────────────────────────────────
-
-SQLModel.metadata.create_all(engine)
+# Tables are created at startup via database.init_db() – not here at import
+# time – so that reloader subprocesses can initialise cleanly.

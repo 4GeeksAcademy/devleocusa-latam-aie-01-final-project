@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from sqlmodel import Session, select
 
-from src.database import engine
+from src.database import get_engine
 from src.models.models import SKU, SKUEntry, SKUExit
 
 
@@ -19,6 +19,7 @@ def seed_inventory() -> int:
     """Insert initial test data into Supabase and return the row count."""
 
     # ── 1. Check whether data already exists ─────────────────────────────
+    engine = get_engine()
     with Session(engine) as session:
         existing = session.exec(select(SKU)).first()
         if existing is not None:

@@ -7,8 +7,8 @@ import type {
   TipoProducto,
   TrabajaCon3PL,
   VolumenMensual,
-} from "../../../../src/types/models";
-import { obtenerAdvertenciaVolumenBajo, validarLead } from "../../../../src/utils/validations";
+} from "@shared/types/models";
+import { obtenerAdvertenciaVolumenBajo, validarLead } from "@shared/utils/validations";
 
 type FormState = {
   nombreEmpresa: string;
