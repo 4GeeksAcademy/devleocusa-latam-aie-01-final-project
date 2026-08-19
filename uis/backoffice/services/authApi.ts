@@ -1,4 +1,8 @@
-const API_BASE_URL = 'https://crispy-space-goggles-qxjqwvjvw4qc9r5g-3001.app.github.dev';
+const API_BASE_URL =
+  (typeof process !== "undefined" &&
+    typeof process.env === "object" &&
+    (process.env as Record<string, string | undefined>).NEXT_PUBLIC_API_BASE_URL) ||
+  "http://localhost:8000";
 const AUTH_TOKEN_STORAGE_KEY = 'trackflow_token';
 const LOGIN_PATH = '/login';
 

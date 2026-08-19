@@ -28,7 +28,7 @@ type SupplierCreate = {
   estado: SupplierStatus;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_SUPPLIERS_API_BASE_URL ?? "http://localhost:8000";
 
 const countryOptions: SupplierCountry[] = ["Estados Unidos", "España"];
 const categoryOptions: SupplierCategory[] = [

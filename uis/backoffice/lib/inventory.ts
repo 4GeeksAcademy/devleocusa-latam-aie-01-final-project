@@ -20,7 +20,7 @@ const INVENTORY_API_BASE_URL: string =
   (process.env as Record<string, string | undefined>).NEXT_PUBLIC_INVENTORY_API_URL
     ? ((process.env as Record<string, string | undefined>)
         .NEXT_PUBLIC_INVENTORY_API_URL as string)
-    : "http://localhost:3001";
+    : "http://localhost:8000";
 
 const INVENTORY_PREFIX = "/inventory";
 
