@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from src.cache import me_cache, profile_cache, users_list_cache
 from src.models.profile import Profile, ProfileResponse
 from src.models.user import TinyDBId, User, UserRole
 from src.services.auth_service import get_current_user
@@ -91,13 +92,23 @@ def register_user(payload: UserCreateRequest) -> UserWithProfileResponse:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     profile = get_profile_by_user_id(user.id)
+
+    # Invalidate users list cache — new user added
+    users_list_cache.invalidate("all")
+
     return UserWithProfileResponse(user=_to_user_response(user), profile=_to_profile_response(profile))
 
 
 @users_router.get("", response_model=list[UserResponse])
 def get_users(_current_user: User = Depends(get_current_user)) -> list[UserResponse]:
+    cached = users_list_cache.get("all")
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
     users = list_users()
-    return [_to_user_response(user) for user in users]
+    result = [_to_user_response(user) for user in users]
+    users_list_cache.set("all", result)
+    return result
 
 
 @users_router.get("/{user_id}", response_model=UserResponse)
@@ -127,6 +138,12 @@ def put_user(
 
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Invalidate caches — user data changed (email/role)
+    me_cache.invalidate(str(user_id))
+    profile_cache.invalidate(str(user_id))
+    users_list_cache.invalidate("all")
+
     return _to_user_response(user)
 
 
@@ -135,4 +152,10 @@ def remove_user(user_id: str, _current_user: User = Depends(get_current_user)) -
     deleted = delete_user(user_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Invalidate caches — user no longer exists
+    me_cache.invalidate(str(user_id))
+    profile_cache.invalidate(str(user_id))
+    users_list_cache.invalidate("all")
+
     return {"message": "User deleted"}

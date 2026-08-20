@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
+from src.cache import inventory_products_cache, inventory_product_cache
 from src.database import get_sql_session
 from src.models.models import SKU, SKUEntry, SKUExit
 from src.models.schemas import (
@@ -80,8 +81,14 @@ def list_products(
     db: Session = Depends(get_sql_session),
 ) -> list[SKURead]:
     """List all SKUs with their dynamically computed ``current_stock``."""
+    cached = inventory_products_cache.get("all")
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
     skus = db.exec(select(SKU)).all()
-    return [_build_sku_read(db, sku) for sku in skus]
+    result = [_build_sku_read(db, sku) for sku in skus]
+    inventory_products_cache.set("all", result)
+    return result
 
 
 # ── POST /inventory/products ────────────────────────────────────────
@@ -106,6 +113,10 @@ def create_product(
     db.add(sku)
     db.commit()
     db.refresh(sku)
+
+    # Invalidate products list cache — new SKU added
+    inventory_products_cache.invalidate("all")
+
     return _build_sku_read(db, sku)
 
 
@@ -118,13 +129,19 @@ def get_product(
     db: Session = Depends(get_sql_session),
 ) -> SKURead:
     """Get a specific SKU with its computed ``current_stock``."""
+    cached = inventory_product_cache.get(sku_id)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
     sku = db.get(SKU, sku_id)
     if sku is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="SKU no encontrado.",
         )
-    return _build_sku_read(db, sku)
+    result = _build_sku_read(db, sku)
+    inventory_product_cache.set(sku_id, result)
+    return result
 
 
 # ── POST /inventory/orders/inbound ──────────────────────────────────
@@ -161,6 +178,11 @@ def create_inbound_order(
     db.add(entry)
     db.commit()
     db.refresh(entry)
+
+    # Invalidate product caches — stock changed for this SKU
+    inventory_products_cache.invalidate("all")
+    inventory_product_cache.invalidate(payload.sku_id)
+
     return SKUEntryResponse(
         id=entry.id,
         sku_id=entry.sku_id,
@@ -217,6 +239,11 @@ def create_outbound_order(
     db.add(exit_order)
     db.commit()
     db.refresh(exit_order)
+
+    # Invalidate product caches — stock changed for this SKU
+    inventory_products_cache.invalidate("all")
+    inventory_product_cache.invalidate(payload.sku_id)
+
     return SKUExitResponse(
         id=exit_order.id,
         sku_id=exit_order.sku_id,
