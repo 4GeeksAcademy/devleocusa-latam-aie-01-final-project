@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from src.models.profile import Profile
+from src.models.profile import Profile, ProfileResponse
 from src.models.user import User
 from src.services.auth_service import create_access_token, get_current_user
 from src.services.password_reset_service import (
@@ -33,7 +33,17 @@ class TokenResponse(BaseModel):
 class MeResponse(BaseModel):
     email: str
     role: str
-    profile: Profile | None
+    profile: ProfileResponse | None
+
+
+def _to_profile_response(profile: Profile | None) -> ProfileResponse | None:
+    if profile is None:
+        return None
+    return ProfileResponse(
+        name=profile.name,
+        phone=profile.phone,
+        address=profile.address,
+    )
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -74,7 +84,7 @@ def get_me(current_user: User = Depends(get_current_user)) -> MeResponse:
     return MeResponse(
         email=current_user.email,
         role=current_user.role.value,
-        profile=profile,
+        profile=_to_profile_response(profile),
     )
 
 

@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from src.models.profile import Profile
+from src.models.profile import Profile, ProfileResponse
 from src.models.user import TinyDBId, User, UserRole
 from src.services.auth_service import get_current_user
 from src.services.profile_service import get_profile_by_user_id
@@ -46,7 +46,7 @@ class UserResponse(BaseModel):
 
 class UserWithProfileResponse(BaseModel):
     user: UserResponse
-    profile: Profile | None
+    profile: ProfileResponse | None
 
 
 def _to_user_response(user: User) -> UserResponse:
@@ -56,6 +56,16 @@ def _to_user_response(user: User) -> UserResponse:
         is_active=user.is_active,
         role=user.role,
         created_at=user.created_at,
+    )
+
+
+def _to_profile_response(profile: Profile | None) -> ProfileResponse | None:
+    if profile is None:
+        return None
+    return ProfileResponse(
+        name=profile.name,
+        phone=profile.phone,
+        address=profile.address,
     )
 
 
@@ -81,7 +91,7 @@ def register_user(payload: UserCreateRequest) -> UserWithProfileResponse:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     profile = get_profile_by_user_id(user.id)
-    return UserWithProfileResponse(user=_to_user_response(user), profile=profile)
+    return UserWithProfileResponse(user=_to_user_response(user), profile=_to_profile_response(profile))
 
 
 @users_router.get("", response_model=list[UserResponse])

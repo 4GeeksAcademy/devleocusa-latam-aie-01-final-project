@@ -57,3 +57,47 @@ class Incident(BaseModel):
     branch: IncidentBranch
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ── Response schemas (decoupled from domain model) ───────────────────────
+
+
+class IncidentResponse(BaseModel):
+    """Full incident detail returned by the API.
+
+    Explicitly declared, NOT a dynamic dump of the domain model.
+    """
+
+    id: str
+    title: str
+    description: str
+    category: IncidentCategory
+    status: IncidentStatus
+    origin: IncidentOrigin
+    branch: IncidentBranch
+    created_at: datetime
+    updated_at: datetime
+
+
+class IncidentListResponse(BaseModel):
+    """Lightweight incident payload for list views.
+
+    Excludes ``description`` and ``updated_at`` to save bandwidth
+    on the frontend list view.
+    """
+
+    id: str
+    title: str
+    category: IncidentCategory
+    status: IncidentStatus
+    origin: IncidentOrigin
+    branch: IncidentBranch
+    created_at: datetime
+
+
+class IncidentStatusResponse(BaseModel):
+    """Minimal response after a status transition."""
+
+    id: str
+    status: IncidentStatus
+    updated_at: datetime
