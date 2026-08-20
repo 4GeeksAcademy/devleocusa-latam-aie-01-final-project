@@ -15,3 +15,15 @@ class Profile(BaseModel):
     name: str
     phone: str
     address: str
+
+
+class ProfileResponse(BaseModel):
+    """Profile data returned to the frontend.
+
+    Excludes internal identifiers (``id``, ``user_id``) that
+    leak TinyDB infrastructure details.
+    """
+
+    name: str
+    phone: str
+    address: str

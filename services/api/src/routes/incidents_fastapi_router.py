@@ -10,8 +10,11 @@ from src.models.incident import (
     Incident,
     IncidentBranch,
     IncidentCategory,
+    IncidentListResponse,
     IncidentOrigin,
+    IncidentResponse,
     IncidentStatus,
+    IncidentStatusResponse,
 )
 from src.models.user import User
 from src.services.auth_service import get_current_user
@@ -99,29 +102,30 @@ def _raise_bad_request_with_details(details: list[dict[str, str]]) -> None:
     )
 
 
-@incidents_fastapi_router.post("/api/incidents", response_model=Incident, status_code=status.HTTP_201_CREATED)
+@incidents_fastapi_router.post("/api/incidents", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 def create_incident_route(
     payload: dict,
     _current_user: User = Depends(get_current_user),
-) -> Incident:
+) -> IncidentResponse:
     try:
         request_body = IncidentCreateRequest.model_validate(payload)
     except ValidationError as error:
         _raise_bad_request_with_details(_structured_validation_error(error))
 
     incident = create_incident(request_body.model_dump(mode="python"))
-    return incident
+    return IncidentResponse.model_validate(incident.model_dump())
 
 
-@incidents_fastapi_router.get("/api/incidents", response_model=list[Incident])
+@incidents_fastapi_router.get("/api/incidents", response_model=list[IncidentListResponse])
 def list_incidents_route(
     status: IncidentStatus | None = None,
     origin: IncidentOrigin | None = None,
     branch: IncidentBranch | None = None,
     category: IncidentCategory | None = None,
     _current_user: User = Depends(get_current_user),
-) -> list[Incident]:
-    return list_incidents(status=status, origin=origin, branch=branch, category=category)
+) -> list[IncidentListResponse]:
+    incidents = list_incidents(status=status, origin=origin, branch=branch, category=category)
+    return [IncidentListResponse.model_validate(i.model_dump()) for i in incidents]
 
 
 @incidents_fastapi_router.get("/api/incidents/summary")
@@ -131,24 +135,24 @@ def incidents_summary_route(
     return incidents_summary()
 
 
-@incidents_fastapi_router.get("/api/incidents/{incident_id}", response_model=Incident)
+@incidents_fastapi_router.get("/api/incidents/{incident_id}", response_model=IncidentResponse)
 def get_incident_by_id_route(
     incident_id: str,
     _current_user: User = Depends(get_current_user),
-) -> Incident:
+) -> IncidentResponse:
     incident = get_incident_by_id(incident_id)
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidencia no encontrada.")
 
-    return incident
+    return IncidentResponse.model_validate(incident.model_dump())
 
 
-@incidents_fastapi_router.patch("/api/incidents/{incident_id}/status", response_model=Incident)
+@incidents_fastapi_router.patch("/api/incidents/{incident_id}/status", response_model=IncidentStatusResponse)
 def patch_incident_status_route(
     incident_id: str,
     payload: dict,
     _current_user: User = Depends(get_current_user),
-) -> Incident:
+) -> IncidentStatusResponse:
     incident = get_incident_by_id(incident_id)
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidencia no encontrada.")
@@ -175,7 +179,11 @@ def patch_incident_status_route(
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidencia no encontrada.")
 
-    return updated
+    return IncidentStatusResponse(
+        id=updated.id,
+        status=updated.status,
+        updated_at=updated.updated_at,
+    )
 
 
 @incidents_fastapi_router.post("/api/incidents/analyze")

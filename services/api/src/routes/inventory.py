@@ -11,7 +11,9 @@ from src.models.models import SKU, SKUEntry, SKUExit
 from src.models.schemas import (
     SKUCreate,
     SKUEntryRead,
+    SKUEntryResponse,
     SKUExitRead,
+    SKUExitResponse,
     SKURead,
 )
 from src.models.user import User
@@ -130,14 +132,14 @@ def get_product(
 
 @inventory_router.post(
     "/orders/inbound",
-    response_model=SKUEntryRead,
+    response_model=SKUEntryResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_inbound_order(
     payload: _InboundRequest,
     db: Session = Depends(get_sql_session),
     _current_user: User = Depends(get_current_user),
-) -> SKUEntry:
+) -> SKUEntryResponse:
     """Record an inbound stock movement (SKUEntry).
 
     The ``user_uuid`` is **not** taken from the request body; it is
@@ -159,7 +161,12 @@ def create_inbound_order(
     db.add(entry)
     db.commit()
     db.refresh(entry)
-    return entry
+    return SKUEntryResponse(
+        id=entry.id,
+        sku_id=entry.sku_id,
+        quantity=entry.quantity,
+        created_at=entry.created_at,
+    )
 
 
 # ── POST /inventory/orders/outbound ─────────────────────────────────
@@ -167,14 +174,14 @@ def create_inbound_order(
 
 @inventory_router.post(
     "/orders/outbound",
-    response_model=SKUExitRead,
+    response_model=SKUExitResponse,
     status_code=status.HTTP_201_CREATED,
 )
 def create_outbound_order(
     payload: _OutboundRequest,
     db: Session = Depends(get_sql_session),
     _current_user: User = Depends(get_current_user),
-) -> SKUExit:
+) -> SKUExitResponse:
     """Record an outbound stock movement (SKUExit).
 
     **Business rule:** stock must not go negative.  If the resulting
@@ -210,7 +217,12 @@ def create_outbound_order(
     db.add(exit_order)
     db.commit()
     db.refresh(exit_order)
-    return exit_order
+    return SKUExitResponse(
+        id=exit_order.id,
+        sku_id=exit_order.sku_id,
+        quantity=exit_order.quantity,
+        created_at=exit_order.created_at,
+    )
 
 
 # ── GET /inventory/orders ───────────────────────────────────────────

@@ -83,6 +83,19 @@ class SKUEntryRead(BaseModel):
     user_uuid: str
 
 
+class SKUEntryResponse(BaseModel):
+    """Inbound order data returned to the frontend.
+
+    Excludes the internal ``user_uuid`` reference to avoid
+    leaking TinyDB infrastructure details.
+    """
+
+    id: str
+    sku_id: str
+    quantity: int
+    created_at: datetime
+
+
 # ── SKUExit (outbound orders) ────────────────────────────────────────────
 
 
@@ -112,3 +125,16 @@ class SKUExitRead(BaseModel):
     quantity: int
     created_at: datetime
     user_uuid: str
+
+
+class SKUExitResponse(BaseModel):
+    """Outbound order data returned to the frontend.
+
+    Excludes the internal ``user_uuid`` reference to avoid
+    leaking TinyDB infrastructure details.
+    """
+
+    id: str
+    sku_id: str
+    quantity: int
+    created_at: datetime
