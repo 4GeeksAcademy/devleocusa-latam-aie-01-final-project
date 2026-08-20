@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
+from src.cache import TTLCache
 from src.models.incident import (
     Incident,
     IncidentBranch,
@@ -29,6 +30,10 @@ from src.services.incidents_service import (
 )
 
 incidents_fastapi_router = APIRouter(tags=["incidents-legacy"])
+
+# ── In-memory TTL cache for aggregated summaries ────────────────────────
+# Data changes infrequently but is read constantly (dashboard / KPIs).
+_summary_cache = TTLCache(ttl_seconds=30)
 
 ACCEPTED_MIME_TYPES = {
     "text/csv",
@@ -113,6 +118,10 @@ def create_incident_route(
         _raise_bad_request_with_details(_structured_validation_error(error))
 
     incident = create_incident(request_body.model_dump(mode="python"))
+
+    # Invalidate summary cache — a new incident changes all aggregations
+    _summary_cache.invalidate("summary")
+
     return IncidentResponse.model_validate(incident.model_dump())
 
 
@@ -132,7 +141,14 @@ def list_incidents_route(
 def incidents_summary_route(
     _current_user: User = Depends(get_current_user),
 ) -> dict[str, object]:
-    return incidents_summary()
+    # Try cache first — avoids expensive full-table scan
+    cached = _summary_cache.get("summary")
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
+    result = incidents_summary()
+    _summary_cache.set("summary", result)
+    return result
 
 
 @incidents_fastapi_router.get("/api/incidents/{incident_id}", response_model=IncidentResponse)
@@ -178,6 +194,9 @@ def patch_incident_status_route(
     updated = update_incident_status(incident_id, request_body.status)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidencia no encontrada.")
+
+    # Invalidate summary cache — status transition affects aggregations
+    _summary_cache.invalidate("summary")
 
     return IncidentStatusResponse(
         id=updated.id,

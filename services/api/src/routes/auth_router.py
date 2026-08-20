@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from src.cache import me_cache
 from src.models.profile import Profile, ProfileResponse
 from src.models.user import User
 from src.services.auth_service import create_access_token, get_current_user
@@ -80,12 +81,20 @@ def login(payload: LoginRequest) -> TokenResponse:
 
 @auth_router.get("/me", response_model=MeResponse)
 def get_me(current_user: User = Depends(get_current_user)) -> MeResponse:
+    # Try cache first — profile data changes rarely but is read on every page load
+    cache_key = str(current_user.id)
+    cached = me_cache.get(cache_key)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
+
     profile = get_profile_by_user_id(current_user.id)
-    return MeResponse(
+    response = MeResponse(
         email=current_user.email,
         role=current_user.role.value,
         profile=_to_profile_response(profile),
     )
+    me_cache.set(cache_key, response)
+    return response
 
 
 @auth_router.post("/forgot-password", response_model=ForgotPasswordResponse)
@@ -127,5 +136,8 @@ def change_password(
 
     if updated_user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Invalidate /auth/me cache — user data may have changed
+    me_cache.invalidate(str(current_user.id))
 
     return {"message": "Password changed successfully."}

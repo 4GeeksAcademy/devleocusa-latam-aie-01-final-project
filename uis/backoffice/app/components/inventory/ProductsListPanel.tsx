@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Spinner } from "@/app/components/ui/Spinner";
 import { Alert } from "@/app/components/ui/Alert";
 import {
@@ -96,24 +96,35 @@ export function ProductsListPanel() {
     loadProducts();
   }, [loadProducts]);
 
-  // Filtro por nombre o código SKU
-  const filtered = products.filter((p) => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(term) ||
-      p.sku_code.toLowerCase().includes(term)
-    );
-  });
+  // Filtro por nombre o código SKU — memoizado para no recalcular en cada render
+  const filtered = useMemo(
+    () =>
+      products.filter((p) => {
+        if (!searchTerm.trim()) return true;
+        const term = searchTerm.toLowerCase();
+        return (
+          p.name.toLowerCase().includes(term) ||
+          p.sku_code.toLowerCase().includes(term)
+        );
+      }),
+    [products, searchTerm],
+  );
 
-  // Métricas de resumen
-  const totalProducts = products.length;
-  const criticalCount = products.filter(
-    (p) => computeStockLevel(p.current_stock) === "critical"
-  ).length;
-  const lowCount = products.filter(
-    (p) => computeStockLevel(p.current_stock) === "low"
-  ).length;
+  // Métricas de resumen — memoizadas: iteran toda la lista con computeStockLevel
+  const { totalProducts, criticalCount, lowCount } = useMemo(() => {
+    let crit = 0;
+    let low = 0;
+    for (const p of products) {
+      const level = computeStockLevel(p.current_stock);
+      if (level === "critical") crit++;
+      else if (level === "low") low++;
+    }
+    return {
+      totalProducts: products.length,
+      criticalCount: crit,
+      lowCount: low,
+    };
+  }, [products]);
 
   // ── Render ──────────────────────────────────────────────────────────
 
