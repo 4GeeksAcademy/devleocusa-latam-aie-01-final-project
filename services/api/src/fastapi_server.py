@@ -18,6 +18,7 @@ from src.routes.inventory import inventory_router
 from src.routes.profiles_router import profiles_router
 from src.routes.suppliers_fastapi_router import suppliers_fastapi_router
 from src.routes.users_router import users_router
+from src.telemetry import TelemetryMiddleware
 
 
 @asynccontextmanager
@@ -37,6 +38,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Telemetry middleware — PII sanitization, circuit breaker, exclusion enforcement
+app.add_middleware(TelemetryMiddleware)
 
 app.include_router(auth_router)
 app.include_router(users_router)

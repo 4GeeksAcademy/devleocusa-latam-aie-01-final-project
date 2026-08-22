@@ -1,0 +1,1218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackflow.io/telemetry/event-schemas.json",
+  "title": "TrackFlow — Event Envelope & Schema Registry",
+  "description": "Define el envoltorio estándar (Event Envelope) y la allowlist de properties para cada event_type del sistema de telemetría centralizada de TrackFlow. Versión 1.0.0.",
+  "version": "1.0.0",
+  "lastUpdated": "2026-08-22",
+  "maintainer": "TrackFlow Tech — Lead Data Engineer",
+
+  "sensitiveDataPolicy": {
+    "description": "Política de sanitización de datos sensibles en todos los eventos.",
+    "rules": [
+      {
+        "field": "user_email",
+        "classification": "PII",
+        "action": "HASH_SHA256",
+        "details": "Nunca se captura el email en texto plano. Se envía SHA-256(email) como identificador pseudónimo para auditoría. La transformación se hace en cliente (frontend) antes de emitir el evento."
+      },
+      {
+        "field": "user_password",
+        "classification": "CREDENTIAL",
+        "action": "NEVER_CAPTURED",
+        "details": "Bajo ninguna circunstancia se captura la contraseña. El evento auth.login.attempt se emite antes de enviar la petición fetch, sin incluir el campo password."
+      },
+      {
+        "field": "ip_address",
+        "classification": "PII_INDIRECT",
+        "action": "MASK_LAST_OCTET",
+        "details": "Para cumplimiento GDPR/EU, se enmascara el último octeto (ej. 192.168.1.0 → 192.168.1.0). En US se almacena completo solo si el usuario ha aceptado la política de datos."
+      },
+      {
+        "field": "jwt_token",
+        "classification": "SESSION_TOKEN",
+        "action": "EXTRACT_JTI_ONLY",
+        "details": "Nunca se captura el JWT completo. Solo se extrae el claim 'jti' (JWT ID) para correlacionar eventos de una misma sesión, y se descarta el resto del payload."
+      },
+      {
+        "field": "user_agent",
+        "classification": "DEVICE_FINGERPRINT",
+        "action": "TRUNCATE_120",
+        "details": "Se trunca a 120 caracteres eliminando versiones de parche para evitar fingerprinting excesivo (ej. 'Chrome/120.0.0' → 'Chrome/120')."
+      },
+      {
+        "field": "sku_code",
+        "classification": "BUSINESS_CONFIDENTIAL",
+        "action": "KEEP_AS_IS",
+        "details": "Los códigos SKU no son PII pero son datos comerciales sensibles. Se almacenan tal cual para operaciones, pero no se exponen en dashboards públicos."
+      },
+      {
+        "field": "error_traceback",
+        "classification": "TECHNICAL_INTERNAL",
+        "action": "STRIP_FILE_PATHS",
+        "details": "Los tracebacks de error se limpian eliminando rutas absolutas del sistema de archivos del servidor (/home/user/projects/ → .../)."
+      },
+      {
+        "field": "deal_value",
+        "classification": "BUSINESS_CONFIDENTIAL",
+        "action": "KEEP_AS_IS",
+        "details": "El valor del contrato es un dato comercial sensible. Se almacena tal cual para análisis de ingresos, pero no se expone en dashboards públicos. Acceso restringido a roles Comercial y Dirección."
+      }
+    ]
+  },
+
+  "eventEnvelope": {
+    "description": "Envoltorio estándar que envuelve TODOS los eventos de telemetría. Cada evento emitido debe cumplir estrictamente esta estructura.",
+    "type": "object",
+    "required": [
+      "eventId",
+      "timestamp",
+      "sessionId",
+      "userId",
+      "event_type",
+      "schemaVersion",
+      "requestId",
+      "properties"
+    ],
+    "properties": {
+      "eventId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Identificador único del evento (UUID v4). Generado en el origen (frontend o backend) antes de emitir el evento."
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+        "description": "Marca de tiempo UTC en formato ISO 8601. Siempre en UTC, con sufijo 'Z'. Ejemplo: 2026-08-22T10:15:30Z."
+      },
+      "sessionId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "Identificador de sesión (JWT ID / jti). Permite correlacionar todos los eventos de un mismo inicio de sesión."
+      },
+      "userId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "UUID del usuario autenticado que generó el evento. Vacío ('') para eventos anónimos (ej. login.attempt antes de autenticar)."
+      },
+      "event_type": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]+(\\.[a-z][a-z0-9_]+)+$",
+        "description": "Tipo de evento en formato estricto 'entidad_accion'. Minúsculas, snake_case. Ejemplos: auth.login.attempt, sku.create.success, outbound.order.rejected."
+      },
+      "schemaVersion": {
+        "type": "string",
+        "pattern": "^\\d+\\.\\d+\\.\\d+$",
+        "description": "Versión del esquema de properties (semver). La versión aquí declarada debe coincidir con la versión del schema en este registro. Actual: 1.0.0."
+      },
+      "requestId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "ID de la petición HTTP correlacionada (Trace ID de OpenTelemetry o request_id del middleware de FastAPI). Vacío si el evento no proviene de una petición HTTP (ej. batch de validación de stock)."
+      },
+      "properties": {
+        "type": "object",
+        "description": "Mapa clave-valor con los datos específicos del evento. Solo se permiten las claves definidas en la allowlist de cada event_type. Cualquier clave no listada será rechazada por el validador de esquema.",
+        "minProperties": 1,
+        "additionalProperties": false
+      }
+    }
+  },
+
+  "eventSchemas": {
+
+    "================================================================================": "SECCIÓN 1 — OBLIGATORIOS (Mínimo viable)",
+
+    "auth.login.attempt": {
+      "description": "Intento de inicio de sesión. Se emite desde el frontend justo antes de enviar la petición POST /auth/login.",
+      "category": "autenticacion",
+      "obligatorio": true,
+      "sensitiveFields": ["user_email", "ip_address", "user_agent"],
+      "properties": {
+        "type": "object",
+        "required": ["user_email_hash", "ip_address", "warehouse_context"],
+        "additionalProperties": false,
+        "properties": {
+          "user_email_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 del email del usuario. Sanitizado: nunca se envía el email en claro."
+          },
+          "ip_address": {
+            "type": "string",
+            "maxLength": 45,
+            "description": "Dirección IP del cliente. Enmascarada: último octeto a 0 para tráfico EU (192.168.1.0)."
+          },
+          "warehouse_context": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza", "unknown"],
+            "description": "Almacén desde el que se intenta acceder. Se infiere por geolocalización de IP o selección explícita."
+          },
+          "user_agent": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "User-Agent truncado a 120 caracteres sin versiones de parche."
+          }
+        }
+      }
+    },
+
+    "auth.login.success": {
+      "description": "Inicio de sesión exitoso. Se emite desde el frontend después de recibir el token JWT y almacenarlo.",
+      "category": "autenticacion",
+      "obligatorio": true,
+      "properties": {
+        "type": "object",
+        "required": ["warehouse_context"],
+        "additionalProperties": false,
+        "properties": {
+          "warehouse_context": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"],
+            "description": "Almacén del usuario autenticado."
+          }
+        }
+      }
+    },
+
+    "auth.login.failure": {
+      "description": "Intento de login fallido por credenciales inválidas (HTTP 401 desde POST /auth/login).",
+      "category": "autenticacion",
+      "obligatorio": false,
+      "sensitiveFields": ["user_email"],
+      "properties": {
+        "type": "object",
+        "required": ["user_email_hash", "failure_reason"],
+        "additionalProperties": false,
+        "properties": {
+          "user_email_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 del email intentado. Sanitizado."
+          },
+          "failure_reason": {
+            "type": "string",
+            "enum": ["invalid_credentials", "user_not_found", "account_locked"],
+            "description": "Razón del fallo normalizada. No se exponen detalles internos (ej. 'usuario existe pero contraseña incorrecta')."
+          },
+          "attempt_count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Número de intentos fallidos consecutivos desde esta IP/email en los últimos 15 minutos."
+          },
+          "ip_address": {
+            "type": "string",
+            "maxLength": 45,
+            "description": "IP del cliente. Enmascarada según política."
+          }
+        }
+      }
+    },
+
+    "sku.create.attempt": {
+      "description": "Intento de creación de un nuevo producto SKU. Se emite desde el frontend al pulsar 'Guardar producto'.",
+      "category": "inventario",
+      "obligatorio": true,
+      "sensitiveFields": ["sku_code"],
+      "properties": {
+        "type": "object",
+        "required": ["sku_code", "warehouse"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_code": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Código SKU que se intenta crear. Dato comercial sensible pero necesario para operaciones."
+          },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"],
+            "description": "Almacén destino del nuevo SKU."
+          },
+          "product_name_length": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Longitud del nombre del producto. Métrica auxiliar de UX."
+          }
+        }
+      }
+    },
+
+    "sku.create.success": {
+      "description": "SKU creado exitosamente (HTTP 201 desde POST /inventory/products).",
+      "category": "inventario",
+      "obligatorio": true,
+      "properties": {
+        "type": "object",
+        "required": ["sku_id", "sku_code", "warehouse"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID del SKU recién creado."
+          },
+          "sku_code": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Código SKU creado."
+          },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"],
+            "description": "Almacén donde se registró el SKU."
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Tiempo de respuesta del endpoint en milisegundos."
+          }
+        }
+      }
+    },
+
+    "sku.create.failure": {
+      "description": "Error al crear SKU (HTTP 4xx/5xx desde POST /inventory/products).",
+      "category": "inventario",
+      "obligatorio": true,
+      "sensitiveFields": ["error_traceback"],
+      "properties": {
+        "type": "object",
+        "required": ["sku_code", "error_code", "http_status"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_code": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Código SKU que se intentó crear."
+          },
+          "error_code": {
+            "type": "string",
+            "enum": ["duplicate_sku", "validation_error", "server_error", "unauthorized"],
+            "description": "Código de error normalizado."
+          },
+          "http_status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599,
+            "description": "Código HTTP de estado."
+          },
+          "error_detail": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Mensaje de error descriptivo. Se trunca a 300 caracteres."
+          }
+        }
+      }
+    },
+
+    "inbound.order.created": {
+      "description": "Entrada de stock registrada exitosamente (POST /inventory/orders/inbound → 201).",
+      "category": "inventario",
+      "obligatorio": true,
+      "properties": {
+        "type": "object",
+        "required": ["sku_id", "sku_code", "warehouse", "quantity", "stock_after"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID del SKU."
+          },
+          "sku_code": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Código SKU del producto."
+          },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"],
+            "description": "Almacén donde se registró la entrada."
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Cantidad de unidades recibidas."
+          },
+          "stock_before": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Stock del SKU antes de la entrada."
+          },
+          "stock_after": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Stock del SKU después de la entrada."
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Latencia del endpoint."
+          }
+        }
+      }
+    },
+
+    "outbound.order.created": {
+      "description": "Salida de stock registrada exitosamente (POST /inventory/orders/outbound → 201).",
+      "category": "inventario",
+      "obligatorio": true,
+      "properties": {
+        "type": "object",
+        "required": ["sku_id", "sku_code", "warehouse", "quantity", "stock_after"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sku_code": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"]
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "stock_before": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stock_after": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+
+    "outbound.order.rejected": {
+      "description": "Salida de stock rechazada por stock insuficiente (HTTP 400). Evento CRÍTICO que debe disparar alerta inmediata.",
+      "category": "inventario",
+      "obligatorio": true,
+      "critical": true,
+      "alertSlack": "#ops-warehouse",
+      "properties": {
+        "type": "object",
+        "required": ["sku_id", "sku_code", "warehouse", "quantity_requested", "stock_available"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sku_code": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"]
+          },
+          "quantity_requested": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "stock_available": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stock_deficit": {
+            "type": "integer",
+            "description": "Diferencia negativa: quantity_requested - stock_available. Siempre > 0 cuando se rechaza."
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+
+    "stock.validation.discrepancy": {
+      "description": "Discrepancia detectada entre el stock computado por la API y el reportado por el SGA local. Se emite desde un proceso batch de conciliación.",
+      "category": "inventario",
+      "obligatorio": true,
+      "critical": true,
+      "properties": {
+        "type": "object",
+        "required": ["sku_code", "warehouse", "api_stock", "sga_stock", "difference"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_code": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"]
+          },
+          "api_stock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Stock según la API de TrackFlow (sum entries - sum exits)."
+          },
+          "sga_stock": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Stock según el SGA del almacén (sistema externo)."
+          },
+          "difference": {
+            "type": "integer",
+            "description": "Diferencia absoluta entre api_stock y sga_stock."
+          },
+          "last_reconciliation": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Fecha de la última conciliación exitosa para este SKU."
+          }
+        }
+      }
+    },
+
+    "================================================================================": "SECCIÓN 2 — INVENTARIO (adicionales)",
+
+    "sku.list.requested": {
+      "description": "Solicitud de listado de productos SKU (GET /inventory/products). Útil para medir patrones de consulta.",
+      "category": "inventario",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["total_skus", "latency_ms", "from_cache"],
+        "additionalProperties": false,
+        "properties": {
+          "total_skus": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Número total de SKU devueltos."
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Tiempo de respuesta."
+          },
+          "from_cache": {
+            "type": "boolean",
+            "description": "Indica si la respuesta provino de la caché TTLCache."
+          }
+        }
+      }
+    },
+
+    "warehouse.stock_alert": {
+      "description": "Alerta de stock bajo. Se emite cuando un SKU cae por debajo del umbral configurado (stock_minimo).",
+      "category": "inventario",
+      "obligatorio": false,
+      "critical": true,
+      "properties": {
+        "type": "object",
+        "required": ["sku_code", "warehouse", "current_stock", "min_threshold"],
+        "additionalProperties": false,
+        "properties": {
+          "sku_code": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"]
+          },
+          "current_stock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "min_threshold": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Umbral mínimo configurado para este SKU."
+          },
+          "sku_name": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Nombre descriptivo del producto."
+          }
+        }
+      }
+    },
+
+    "================================================================================": "SECCIÓN 3 — AUTENTICACIÓN",
+
+    "auth.password_reset.requested": {
+      "description": "Solicitud de restablecimiento de contraseña (POST /auth/forgot-password).",
+      "category": "autenticacion",
+      "obligatorio": false,
+      "sensitiveFields": ["user_email"],
+      "properties": {
+        "type": "object",
+        "required": ["user_email_hash"],
+        "additionalProperties": false,
+        "properties": {
+          "user_email_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 del email. Sanitizado."
+          },
+          "ip_address": {
+            "type": "string",
+            "maxLength": 45,
+            "description": "IP enmascarada del solicitante."
+          }
+        }
+      }
+    },
+
+    "auth.password_reset.completed": {
+      "description": "Restablecimiento de contraseña completado exitosamente (POST /auth/reset-password).",
+      "category": "autenticacion",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["user_email_hash"],
+        "additionalProperties": false,
+        "properties": {
+          "user_email_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+
+    "auth.session.expired": {
+      "description": "Sesión expirada. Se emite desde el AuthGuard del frontend cuando el JWT ha superado su fecha de expiración.",
+      "category": "autenticacion",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["session_duration_minutes"],
+        "additionalProperties": false,
+        "properties": {
+          "session_duration_minutes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Duración total de la sesión en minutos."
+          },
+          "expired_reason": {
+            "type": "string",
+            "enum": ["token_expired", "token_invalid", "logout"],
+            "description": "Motivo del fin de sesión."
+          }
+        }
+      }
+    },
+
+    "auth.register.completed": {
+      "description": "Registro de nuevo usuario completado (POST /users).",
+      "category": "autenticacion",
+      "obligatorio": false,
+      "sensitiveFields": ["user_email"],
+      "properties": {
+        "type": "object",
+        "required": ["user_email_hash", "latency_ms"],
+        "additionalProperties": false,
+        "properties": {
+          "user_email_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "description": "SHA-256 del email registrado. Sanitizado."
+          },
+          "has_name": {
+            "type": "boolean",
+            "description": "Indica si el usuario proporcionó nombre durante el registro."
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+
+    "================================================================================": "SECCIÓN 4 — ERRORES Y RENDIMIENTO",
+
+    "ui.action.error": {
+      "description": "Error capturado en el frontend (try/catch en componentes React). Indica problemas de red, serialización o estados inconsistentes.",
+      "category": "errores",
+      "obligatorio": true,
+      "sensitiveFields": ["error_traceback"],
+      "properties": {
+        "type": "object",
+        "required": ["component", "action", "error_message"],
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Nombre del componente React donde ocurrió el error (ej. 'InventoryDashboard')."
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Acción que falló (ej. 'createInboundOrder', 'loadProducts')."
+          },
+          "error_message": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Mensaje de error. Truncado a 300 caracteres."
+          },
+          "http_status": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 599,
+            "description": "Código HTTP si el error proviene de una respuesta del servidor. 0 si es error de red."
+          },
+          "retry_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Número de reintentos realizados antes de notificar el error."
+          }
+        }
+      }
+    },
+
+    "api.error.server": {
+      "description": "Error interno del servidor (HTTP 5xx). Se emite desde el middleware de errores de FastAPI.",
+      "category": "errores",
+      "obligatorio": true,
+      "critical": true,
+      "alertSlack": "#ops-tech",
+      "sensitiveFields": ["error_traceback"],
+      "properties": {
+        "type": "object",
+        "required": ["endpoint", "http_status", "error_code"],
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Ruta del endpoint que falló (ej. '/inventory/orders/outbound')."
+          },
+          "http_method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+            "description": "Método HTTP."
+          },
+          "http_status": {
+            "type": "integer",
+            "minimum": 500,
+            "maximum": 599
+          },
+          "error_code": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "Código interno del error (ej. 'SKU_NOT_FOUND', 'DB_CONNECTION_ERROR')."
+          },
+          "error_detail": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Detalle del error con rutas de archivo sanitizadas."
+          },
+          "user_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID del usuario que realizaba la petición."
+          },
+          "request_path_params": {
+            "type": "object",
+            "description": "Parámetros de ruta (path params) de la petición. No incluye query params ni body."
+          }
+        }
+      }
+    },
+
+    "api.error.client": {
+      "description": "Error de cliente (HTTP 4xx). Se emite desde el middleware de errores de FastAPI para peticiones malformadas no relacionadas con negocio.",
+      "category": "errores",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["endpoint", "http_status", "error_code"],
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": { "type": "string", "maxLength": 200 },
+          "http_method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "http_status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 499
+          },
+          "error_code": { "type": "string", "maxLength": 50 },
+          "error_detail": { "type": "string", "maxLength": 300 }
+        }
+      }
+    },
+
+    "performance.api.latency": {
+      "description": "Métrica de latencia de endpoints. Se muestrea con una tasa del 10% para no saturar el pipeline de telemetría.",
+      "category": "rendimiento",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["endpoint", "http_method", "latency_ms", "http_status"],
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "http_method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "latency_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "http_status": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          }
+        }
+      }
+    },
+
+    "cache.inventory.hit": {
+      "description": "Acierto de caché TTLCache para datos de inventario.",
+      "category": "rendimiento",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["cache_key", "ttl_seconds"],
+        "additionalProperties": false,
+        "properties": {
+          "cache_key": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Clave de caché consultada (ej. 'all', 'sku-uuid')."
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "TTL configurado para esta entrada de caché."
+          },
+          "age_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Edad de la entrada de caché en segundos."
+          }
+        }
+      }
+    },
+
+    "cache.inventory.miss": {
+      "description": "Fallo de caché TTLCache. La entrada no existía o expiró, requiriendo consulta a base de datos.",
+      "category": "rendimiento",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["cache_key", "ttl_seconds", "query_latency_ms"],
+        "additionalProperties": false,
+        "properties": {
+          "cache_key": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "query_latency_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Tiempo que tomó la consulta a base de datos para reconstruir la caché."
+          }
+        }
+      }
+    },
+
+    "================================================================================": "SECCIÓN 5 — INCIDENCIAS",
+
+    "incident.created": {
+      "description": "Nueva incidencia registrada en el sistema (POST /incidents).",
+      "category": "incidencias",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["incident_id", "category", "branch"],
+        "additionalProperties": false,
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID de la incidencia creada."
+          },
+          "category": {
+            "type": "string",
+            "enum": ["Almacen", "Ultima_Milla", "Logistica_Inversa", "CX", "Comercial", "Tecnologia"],
+            "description": "Categoría de la incidencia."
+          },
+          "origin": {
+            "type": "string",
+            "enum": ["customer", "branch", "internal"],
+            "description": "Origen de la incidencia."
+          },
+          "branch": {
+            "type": "string",
+            "enum": ["Los Ángeles", "Zaragoza", "Central"],
+            "description": "Rama operativa donde se registró."
+          },
+          "title_length": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Longitud del título. Métrica de UX."
+          }
+        }
+      }
+    },
+
+    "incident.resolved": {
+      "description": "Incidencia resuelta (transición de estado a 'resolved').",
+      "category": "incidencias",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["incident_id", "category", "elapsed_minutes"],
+        "additionalProperties": false,
+        "properties": {
+          "incident_id": { "type": "string", "format": "uuid" },
+          "category": {
+            "type": "string",
+            "enum": ["Almacen", "Ultima_Milla", "Logistica_Inversa", "CX", "Comercial", "Tecnologia"]
+          },
+          "elapsed_minutes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Tiempo transcurrido desde la creación hasta la resolución."
+          },
+          "branch": {
+            "type": "string",
+            "enum": ["Los Ángeles", "Zaragoza", "Central"]
+          }
+        }
+      }
+    },
+
+    "incident.status_changed": {
+      "description": "Cambio de estado de una incidencia (open → in_progress, in_progress → discarded, etc.).",
+      "category": "incidencias",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["incident_id", "from_status", "to_status"],
+        "additionalProperties": false,
+        "properties": {
+          "incident_id": { "type": "string", "format": "uuid" },
+          "from_status": {
+            "type": "string",
+            "enum": ["open", "in_progress", "resolved", "discarded"]
+          },
+          "to_status": {
+            "type": "string",
+            "enum": ["open", "in_progress", "resolved", "discarded"]
+          },
+          "category": {
+            "type": "string",
+            "enum": ["Almacen", "Ultima_Milla", "Logistica_Inversa", "CX", "Comercial", "Tecnologia"]
+          }
+        }
+      }
+    },
+
+    "================================================================================": "SECCIÓN 6 — TRANSPORTISTAS Y PROVEEDORES",
+
+    "carrier.assigned": {
+      "description": "Asignación de un transportista a un envío.",
+      "category": "transportistas",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["carrier_id", "carrier_name", "weight_kg", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "carrier_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID del transportista."
+          },
+          "carrier_name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Nombre del transportista (ej. 'DHL España', 'FedEx')."
+          },
+          "weight_kg": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Peso del envío en kg."
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["baja", "normal", "alta", "urgente"]
+          },
+          "shipping_cost": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Coste calculado del envío."
+          },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"],
+            "description": "Almacén de origen."
+          }
+        }
+      }
+    },
+
+    "supplier.viewed": {
+      "description": "Operario accede a la ficha de un proveedor/transportista en el directorio.",
+      "category": "transportistas",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["supplier_id", "supplier_name"],
+        "additionalProperties": false,
+        "properties": {
+          "supplier_id": { "type": "string", "format": "uuid" },
+          "supplier_name": { "type": "string", "maxLength": 100 },
+          "warehouse": {
+            "type": "string",
+            "enum": ["Los Angeles", "Zaragoza"]
+          }
+        }
+      }
+    },
+
+    "================================================================================": "SECCIÓN 7 — UX Y NAVEGACIÓN",
+
+    "ui.page.view": {
+      "description": "Navegación a una página del backoffice. Se emite en cada cambio de ruta del frontend.",
+      "category": "ux",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["page", "referrer"],
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Ruta de la página visitada (ej. '/backoffice/inventory/products')."
+          },
+          "referrer": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Página desde la que se navegó. Vacío si es entrada directa."
+          },
+          "load_time_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Tiempo de carga percibido por el usuario."
+          }
+        }
+      }
+    },
+
+    "ui.form.validation_error": {
+      "description": "Error de validación en un formulario del frontend (ej. cantidad no válida, campo obligatorio vacío).",
+      "category": "ux",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["form_id", "field", "validation_rule"],
+        "additionalProperties": false,
+        "properties": {
+          "form_id": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Identificador del formulario (ej. 'inbound-form', 'create-sku-form')."
+          },
+          "field": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Campo que falló la validación."
+          },
+          "validation_rule": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Regla de validación incumplida (ej. 'min_value:1', 'required')."
+          },
+          "field_value_length": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Longitud del valor ingresado (útil para depurar). No se captura el valor real."
+          }
+        }
+      }
+    },
+
+    "================================================================================": "SECCIÓN 8 — COMERCIAL Y RRHH",
+
+    "candidate.stage.changed": {
+      "description": "Transición de etapa de un candidato en el pipeline de selección.",
+      "category": "rrhh",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["candidate_id", "from_stage", "to_stage", "elapsed_days"],
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "from_stage": {
+            "type": "string",
+            "enum": ["pending", "review", "personal_interview", "technical_interview", "offer_presented"],
+            "description": "Etapa anterior del candidato."
+          },
+          "to_stage": {
+            "type": "string",
+            "enum": ["pending", "review", "personal_interview", "technical_interview", "offer_presented"],
+            "description": "Nueva etapa del candidato."
+          },
+          "elapsed_days": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Días transcurridos desde que entró en la etapa anterior."
+          }
+        }
+      }
+    },
+
+    "lead.converted": {
+      "description": "Un lead se convierte en cliente.",
+      "category": "comercial",
+      "obligatorio": false,
+      "sensitiveFields": ["deal_value"],
+      "properties": {
+        "type": "object",
+        "required": ["lead_id", "source", "country", "deal_value"],
+        "additionalProperties": false,
+        "properties": {
+          "lead_id": { "type": "string", "format": "uuid" },
+          "source": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "Canal de captación (ej. 'web_form', 'referral', 'outbound')."
+          },
+          "country": {
+            "type": "string",
+            "enum": ["US", "ES"],
+            "description": "País del lead."
+          },
+          "deal_value": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Valor del contrato en EUR/USD. Dato comercial sensible."
+          },
+          "sales_person_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID del account manager responsable."
+          }
+        }
+      }
+    },
+
+    "================================================================================": "SECCIÓN 9 — SISTEMA (telemetría interna)",
+
+    "telemetry.throttle.activated": {
+      "description": "Se activó el circuit breaker o throttling global en el pipeline. Se emite cuando el Collector o el middleware descartan eventos por exceder umbrales de frecuencia (riesgo 2 del proposal).",
+      "category": "sistema",
+      "obligatorio": false,
+      "critical": true,
+      "properties": {
+        "type": "object",
+        "required": ["endpoint", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Endpoint o sesión que disparó el throttle (ej. 'POST /inventory/orders/outbound')."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 300,
+            "description": "Causa del throttle: 'circuit_breaker: >10 errors in 10s', 'rate_limit: >100 events/s por userId', etc."
+          },
+          "original_event_type": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "El event_type que se estaba emitiendo cuando se activó el throttle."
+          },
+          "dropped_count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Número aproximado de eventos descartados durante la ventana de silencio."
+          }
+        }
+      }
+    },
+
+    "telemetry.exclusions.enforced": {
+      "description": "Se detectó y bloqueó un campo de la lista de exclusiones (passwords, JWT, DNI, GPS, etc.). Se emite para auditar que las exclusiones funcionan.",
+      "category": "sistema",
+      "obligatorio": false,
+      "properties": {
+        "type": "object",
+        "required": ["excluded_key", "event_type_origin"],
+        "additionalProperties": false,
+        "properties": {
+          "excluded_key": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Nombre del campo excluido que se intentó enviar (ej. 'password', 'gps_coordinates')."
+          },
+          "event_type_origin": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Event_type que contenía el campo excluido."
+          },
+          "source": {
+            "type": "string",
+            "enum": ["backend", "frontend"],
+            "description": "Dónde se detectó la infracción: en el middleware Python (backend) o en el cliente TypeScript (frontend)."
+          }
+        }
+      }
+    }
+  },
+
+  "additionalEventTypes": {
+    "note": "Este registro registra los tipos de evento actualmente definidos. Para añadir un nuevo event_type, debe seguirse el proceso de approval en el repositorio de telemetría. Nunca se deben emitir eventos con event_types no registrados.",
+    "totalEvents": 32,
+    "summaryByCategory": {
+      "autenticacion": ["auth.login.attempt", "auth.login.success", "auth.login.failure", "auth.password_reset.requested", "auth.password_reset.completed", "auth.session.expired", "auth.register.completed"],
+      "inventario": ["sku.create.attempt", "sku.create.success", "sku.create.failure", "inbound.order.created", "outbound.order.created", "outbound.order.rejected", "stock.validation.discrepancy", "sku.list.requested", "warehouse.stock_alert"],
+      "errores": ["ui.action.error", "api.error.server", "api.error.client"],
+      "rendimiento": ["performance.api.latency", "cache.inventory.hit", "cache.inventory.miss"],
+      "incidencias": ["incident.created", "incident.resolved", "incident.status_changed"],
+      "transportistas": ["carrier.assigned", "supplier.viewed"],
+      "ux": ["ui.page.view", "ui.form.validation_error"],
+      "rrhh": ["candidate.stage.changed"],
+      "comercial": ["lead.converted"],
+      "sistema": ["telemetry.throttle.activated", "telemetry.exclusions.enforced"]
+    }
+  }
+}

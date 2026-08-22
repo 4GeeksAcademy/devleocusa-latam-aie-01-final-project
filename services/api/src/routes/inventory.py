@@ -19,6 +19,7 @@ from src.models.schemas import (
 )
 from src.models.user import User
 from src.services.auth_service import get_current_user
+from src.telemetry import emit_event
 
 inventory_router = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -45,6 +46,40 @@ def _build_sku_read(session: Session, sku: SKU) -> SKURead:
         sku_code=sku.sku_code,
         warehouse=sku.warehouse,
         current_stock=_compute_current_stock(session, sku.id),
+    )
+
+
+def _emit_outbound_rejected(
+    sku: SKU,
+    quantity_requested: int,
+    stock_available: int,
+    stock_deficit: int,
+    user_error_ratio: float,
+    user_uuid: str,
+) -> None:
+    """Emit ``outbound.order.rejected`` with false-alarm context.
+
+    If ``user_error_ratio > 100`` the alert priority is lowered:
+    - Event is still stored in the telemetry pipeline.
+    - Slack alert is suppressed (marked ``"alert_priority": "low"``).
+    - Dashboard filters can show/hide based on this field.
+    """
+    import math
+
+    alert_priority = "low" if user_error_ratio > 100 else "high"
+    emit_event(
+        "outbound.order.rejected",
+        {
+            "sku_id": sku.id,
+            "sku_code": sku.sku_code,
+            "warehouse": sku.warehouse,
+            "quantity_requested": quantity_requested,
+            "stock_available": stock_available,
+            "stock_deficit": stock_deficit,
+            "user_error_ratio": round(user_error_ratio, 1) if math.isfinite(user_error_ratio) else None,
+            "alert_priority": alert_priority,
+        },
+        user_id=user_uuid,
     )
 
 
@@ -222,6 +257,26 @@ def create_outbound_order(
     current_stock = _compute_current_stock(db, payload.sku_id)
 
     if current_stock - payload.quantity < 0:
+        # ── False-alarm detection ────────────────────────────────────
+        # Calculate user_error_probability: if the operator requested
+        # many times more than available stock, it's likely a typo,
+        # not a systemic stock problem.
+        stock_deficit = payload.quantity - current_stock
+        if current_stock > 0:
+            user_error_ratio = stock_deficit / current_stock
+        else:
+            user_error_ratio = float("inf")
+
+        # Emit telemetry event with contextual risk score
+        _emit_outbound_rejected(
+            sku=sku,
+            quantity_requested=payload.quantity,
+            stock_available=current_stock,
+            stock_deficit=stock_deficit,
+            user_error_ratio=user_error_ratio,
+            user_uuid=str(_current_user.id),
+        )
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
