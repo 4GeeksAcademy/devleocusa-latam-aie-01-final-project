@@ -1,4 +1,9 @@
-# Bienvenido a TrackFlow
+POST /telemetry/events → HTTP 200
+Body: {"events": [
+  {"eventId":"a1b2...","event_type":"auth.login.attempt",...},
+  {"eventId":"b2c3...","event_type":"ui.action.error",...}
+]}
+Response: {"received": 2}# Bienvenido a TrackFlow
 
 ## AI Engineering · 4Geeks Academy — Briefing de empresa
 

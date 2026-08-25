@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
 
@@ -19,6 +20,7 @@ from src.routes.profiles_router import profiles_router
 from src.routes.suppliers_fastapi_router import suppliers_fastapi_router
 from src.routes.users_router import users_router
 from src.telemetry import TelemetryMiddleware
+from telemetry.router import router as telemetry_router
 
 
 @asynccontextmanager
@@ -48,6 +50,10 @@ app.include_router(profiles_router)
 app.include_router(inventory_router)
 app.include_router(suppliers_fastapi_router)
 app.include_router(incidents_fastapi_router)
+
+# Telemetry event ingestion — prefix configurable via TELEMETRY_ENDPOINT
+_telemetry_prefix = os.getenv("TELEMETRY_ENDPOINT", "/telemetry").rstrip("/")
+app.include_router(telemetry_router, prefix=_telemetry_prefix)
 
 
 @app.exception_handler(RequestValidationError)

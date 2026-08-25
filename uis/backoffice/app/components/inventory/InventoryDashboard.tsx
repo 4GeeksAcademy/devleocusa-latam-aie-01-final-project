@@ -15,6 +15,13 @@ import {
   type WarehouseLocation,
   InventoryApiError,
 } from "../../../lib/inventory";
+import {
+  trackSkuCreateAttempt,
+  trackSkuCreateSuccess,
+  trackSkuCreateFailure,
+  trackInboundOrderCreated,
+  trackOutboundOrderCreated,
+} from "../../../lib/instrumentation";
 
 // ─── Helpers ────────────────────────────────────────────────────────────
 
@@ -104,18 +111,49 @@ export function InventoryDashboard() {
       return;
     }
 
+    const startTs = performance.now();
+    const skuCode = newProduct.sku_code.trim();
+    const warehouse = newProduct.warehouse;
+
+    // Emit sku.create.attempt
+    trackSkuCreateAttempt(skuCode, warehouse, newProduct.name.trim().length);
+
     setActionLoading((prev) => ({ ...prev, create: true }));
     try {
-      await createProduct(newProduct);
+      const created = await createProduct(newProduct);
+      const latencyMs = Math.round(performance.now() - startTs);
+
       notify("success", `Producto "${newProduct.name}" creado correctamente.`);
+
+      // Emit sku.create.success
+      trackSkuCreateSuccess(created.id, created.sku_code, warehouse, latencyMs);
+
       setShowCreateForm(false);
       setNewProduct({ name: "", sku_code: "", warehouse: "Los Angeles" });
       await loadData();
     } catch (err) {
+      const latencyMs = Math.round(performance.now() - startTs);
+
+      const inventoryErr = err instanceof InventoryApiError ? err : null;
+
+      // Emit sku.create.failure
+      let errorCode: 'duplicate_sku' | 'validation_error' | 'server_error' | 'unauthorized' = 'server_error';
+      const status = inventoryErr?.status ?? 0;
+      if (status === 400) errorCode = 'validation_error';
+      else if (status === 409) errorCode = 'duplicate_sku';
+      else if (status === 401) errorCode = 'unauthorized';
+
+      trackSkuCreateFailure(
+        skuCode,
+        errorCode,
+        status,
+        inventoryErr?.message ?? '',
+      );
+
       notify(
         "error",
-        err instanceof InventoryApiError
-          ? err.message
+        inventoryErr
+          ? inventoryErr.message
           : "No se pudo crear el producto."
       );
     } finally {
@@ -131,12 +169,31 @@ export function InventoryDashboard() {
     }
 
     setActionLoading((prev) => ({ ...prev, [`inbound-${skuId}`]: true }));
+    const startTs = performance.now();
     try {
-      await createInboundOrder({ sku_id: skuId, quantity: qty });
+      const result = await createInboundOrder({ sku_id: skuId, quantity: qty });
+      const latencyMs = Math.round(performance.now() - startTs);
+
       notify("success", `Entrada registrada: +${qty} unidades.`);
       setInboundQty((prev) => ({ ...prev, [skuId]: "" }));
+
+      // Find the product to get sku_code and stock_after
+      const product = products.find((p) => p.id === skuId);
+      if (product) {
+        trackInboundOrderCreated(
+          skuId,
+          product.sku_code,
+          product.warehouse as 'Los Angeles' | 'Zaragoza',
+          qty,
+          product.current_stock + qty,
+          product.current_stock,
+          latencyMs,
+        );
+      }
+
       await loadData();
     } catch (err) {
+      const latencyMs = Math.round(performance.now() - startTs);
       notify(
         "error",
         err instanceof InventoryApiError
@@ -156,12 +213,32 @@ export function InventoryDashboard() {
     }
 
     setActionLoading((prev) => ({ ...prev, [`outbound-${skuId}`]: true }));
+    const startTs = performance.now();
     try {
-      await createOutboundOrder({ sku_id: skuId, quantity: qty });
+      const result = await createOutboundOrder({ sku_id: skuId, quantity: qty });
+      const latencyMs = Math.round(performance.now() - startTs);
+
       notify("success", `Salida registrada: -${qty} unidades.`);
       setOutboundQty((prev) => ({ ...prev, [skuId]: "" }));
+
+      // Find the product to get sku_code and stock_after
+      const product = products.find((p) => p.id === skuId);
+      if (product) {
+        const stockAfter = product.current_stock - qty;
+        trackOutboundOrderCreated(
+          skuId,
+          product.sku_code,
+          product.warehouse as 'Los Angeles' | 'Zaragoza',
+          qty,
+          stockAfter >= 0 ? stockAfter : 0,
+          product.current_stock,
+          latencyMs,
+        );
+      }
+
       await loadData();
     } catch (err) {
+      const latencyMs = Math.round(performance.now() - startTs);
       notify(
         "error",
         err instanceof InventoryApiError

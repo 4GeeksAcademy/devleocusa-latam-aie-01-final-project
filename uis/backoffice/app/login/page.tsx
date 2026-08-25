@@ -1,10 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert } from '../components/ui/Alert';
 import { login, setSessionToken } from '../../services/authApi';
+import {
+  trackLoginAttempt,
+  trackLoginSuccess,
+  trackLoginFailure,
+} from '../../lib/instrumentation';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +18,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const attemptRef = useRef(0);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -20,12 +26,36 @@ export default function LoginPage() {
     setIsSubmitting(true);
     setErrorMessage(null);
 
+    const trimmedEmail = email.trim();
+
+    // Emit auth.login.attempt BEFORE the fetch — NO password captured
+    // Per policy: user_password → NEVER_CAPTURED
+    await trackLoginAttempt(trimmedEmail);
+
     try {
-      const token = await login({ email: email.trim(), password });
+      const token = await login({ email: trimmedEmail, password });
+
       setSessionToken(token);
+
+      // Emit auth.login.success after token is stored
+      trackLoginSuccess();
+
       router.replace('/');
     } catch (error) {
-      setErrorMessage((error as Error).message || 'No fue posible iniciar sesion.');
+      const message = (error as Error).message || 'No fue posible iniciar sesion.';
+      setErrorMessage(message);
+
+      // Map error messages to normalized failure_reason enum
+      attemptRef.current += 1;
+      let failureReason: 'invalid_credentials' | 'user_not_found' | 'account_locked' = 'invalid_credentials';
+
+      if (message.includes('no encontrado') || message.includes('not found')) {
+        failureReason = 'user_not_found';
+      } else if (message.includes('bloqueada') || message.includes('locked')) {
+        failureReason = 'account_locked';
+      }
+
+      trackLoginFailure(trimmedEmail, failureReason, attemptRef.current);
     } finally {
       setIsSubmitting(false);
     }

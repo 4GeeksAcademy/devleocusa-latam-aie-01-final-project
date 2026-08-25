@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { SidebarNav } from './SidebarNav';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { logout } from '../../services/authApi';
+import { trackSessionExpired } from '../../lib/instrumentation';
 
 interface AppShellProps {
   children: ReactNode;
@@ -19,6 +20,11 @@ export function AppShell({ children }: AppShellProps) {
   const isPublicRoute = useMemo(() => {
     return PUBLIC_PATHS.has(pathname);
   }, [pathname]);
+
+  const handleLogout = () => {
+    trackSessionExpired(0, 'logout');
+    logout();
+  };
 
   if (isPublicRoute) {
     return <main className="mx-auto w-full max-w-md p-4 sm:p-6 lg:p-8">{children}</main>;
@@ -35,7 +41,7 @@ export function AppShell({ children }: AppShellProps) {
           <SidebarNav />
           <button
             type="button"
-            onClick={logout}
+            onClick={handleLogout}
             className="mt-6 inline-flex w-full justify-center rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-700"
           >
             Cerrar sesión

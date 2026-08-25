@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AppShell } from "./components/AppShell";
+import { Instrumentation } from "../lib/instrumentation";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,6 +30,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-slate-100 text-slate-900">
+        <Instrumentation />
         <AppShell>{children}</AppShell>
       </body>
     </html>

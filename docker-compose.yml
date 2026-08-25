@@ -23,6 +23,7 @@ services:
     volumes:
       # Bind-mount source code for hot-reload (--reload in uvicorn)
       - ./services/api:/app
+      - ./services/telemetry:/app/telemetry
       # Anonymous volume: prevents local node_modules (if any) from
       # shadowing the container-installed Python packages
       - /app/__pycache__/
