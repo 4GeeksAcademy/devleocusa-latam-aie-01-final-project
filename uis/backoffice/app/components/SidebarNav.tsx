@@ -21,6 +21,7 @@ const navItems: NavItem[] = [
   { href: "/backoffice/inventory/orders/outbound", label: "─ Registrar Salida" },
   { href: "/operaciones/proveedores", label: "Directorio de proveedores" },
   { href: "/operaciones/incidencias", label: "Gestion de incidencias" },
+  { href: "/telemetry", label: "📡 Radar de Telemetría" },
 ];
 
 export function SidebarNav() {
