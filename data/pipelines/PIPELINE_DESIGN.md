@@ -740,3 +740,70 @@ Si en cualquier momento durante las fases de Promoción o Estabilización se det
 ---
 
 *Fin de la Sección 4. Esta sección completa el documento de diseño del Pipeline de Inteligencia Ejecutiva de TrackFlow.*
+
+---
+
+## Sección 5: Operación del Pipeline
+
+### 5.1 Ciclo de Reporting Ejecutivo
+
+| Aspecto | Detalle |
+|---|---|
+| **Frecuencia** | Semanal |
+| **Ventana de datos** | Lunes 00:00 UTC — Domingo 23:59 UTC |
+| **Ejecución programada** | Lunes a las **7:00 AM (hora del Pacífico / PT)** — equivalente a 14:00 UTC |
+| **Consumidor principal** | Daniel Espinoza (CEO) — informe semanal consolidado listo al iniciar la semana laboral |
+| **Objetivo de negocio** | Sustituir el proceso manual de los domingos por la noche y entregar KPIs frescos sin intervención humana |
+| **Ventana de tolerancia** | Si el pipeline falla, se reintenta automáticamente (3 reintentos con 10s de espera). Si falla de forma permanente, el equipo de tecnología dispone de hasta 15 minutos para activar el plan de contingencia y volver al informe manual. |
+
+**Alineación con Dirección Ejecutiva:** El horario elegido (lunes 7:00 AM PT) garantiza que Daniel Espinoza encuentre el dashboard actualizado con los KPIs de la semana anterior al llegar a la oficina en Los Ángeles. Esto elimina la necesidad de que los 7 directivos dediquen su domingo a consolidar datos manualmente.
+
+### 5.2 Comando de Ejecución
+
+El pipeline está diseñado para ejecutarse directamente desde la terminal. No requiere servicios externos ni servidores Prefect persistentes para el modo de desarrollo y validación.
+
+```bash
+# Desde la raíz del repositorio
+python data/pipelines/pipeline.py
+
+# O usando uv (entorno virtual gestionado automáticamente)
+cd data/pipelines && uv run python pipeline.py
+```
+
+> **Nota:** En producción, el flow se registrará en un bloque `Schedule` de Prefect Cloud con la expresión cron `0 14 * * 1` (lunes a las 14:00 UTC = 7:00 AM PT). Durante la fase de desarrollo y pruebas, se ejecuta manualmente con los comandos indicados.
+
+### 5.3 Dependencias
+
+- Python >= 3.11
+- Prefect >= 3 (instalado automáticamente vía `uv add "prefect>=3"`)
+
+El entorno virtual se encuentra en `data/pipelines/.venv/` y se gestiona con `uv`:
+
+```bash
+cd data/pipelines
+uv sync          # Sincroniza dependencias del pyproject.toml
+uv add "prefect>=3"   # Añade o actualiza Prefect
+```
+
+### 5.4 Flujo de Ejecución (Fases 1–3)
+
+| Paso | Tarea | Decorador | Característica |
+|---|---|---|---|
+| 1 | `extraer_telemetria()` | `@task(retries=3, retry_delay_seconds=10)` | Resiliencia ante fallos de red de los almacenes |
+| 2 | `transformar_a_kpis()` | `@task(cache_key_fn=..., cache_expiration=1h)` | Caché para evitar recálculos en la misma hora |
+| 3 | `cargar_resultados()` | `@task(retries=3, retry_delay_seconds=10)` | Upsert idempotente sobre (fecha_reporte, id_corrida) |
+| 4 | `notificar_estado()` | `@task` (invocada con `return_state=True`) | Snapshot no crítico — falla sin romper el pipeline |
+
+### 5.5 KPIs Generados
+
+| KPI | Valor (ejemplo) |
+|---|---|
+| Volumen de envíos (total) | 2 |
+| Volumen Los Ángeles / Zaragoza | 1 / 1 |
+| Tasa de entrega a tiempo | 50.0 % |
+| Devoluciones (volumen) | 2 |
+| Tasa de devoluciones | 100.0 % |
+
+---
+
+*Fin de la Sección 5. Esta sección completa la documentación operativa del Pipeline de Inteligencia Ejecutiva de TrackFlow e incluye el ciclo de reporting, el comando de ejecución y la alineación con la Dirección Ejecutiva.*

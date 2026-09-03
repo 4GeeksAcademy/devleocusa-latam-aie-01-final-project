@@ -2,9 +2,12 @@
 flask==3.0.3
 fastapi>=0.141.1
 uvicorn>=0.52.0
-pydantic==2.9.2
-pydantic-settings>=2.14.2
+pydantic>=2.13.0
+pydantic-settings>=2.15.0
 python-multipart>=0.0.32
+
+# ── Pipeline orchestration (direct import from data/pipelines/) ─────────
+prefect>=3.8.4
 
 # ── Database ────────────────────────────────────────────────────────────
 tinydb==4.8.0

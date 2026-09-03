@@ -21,6 +21,7 @@ RUN uv pip install --system --no-cache-dir -r requirements.txt
 # ── Copy application source code ────────────────────────────────────────
 COPY api/ .
 COPY telemetry/ /app/telemetry/
+COPY reporting/ /app/reporting/
 
 # ── Port ────────────────────────────────────────────────────────────────
 EXPOSE 8000
