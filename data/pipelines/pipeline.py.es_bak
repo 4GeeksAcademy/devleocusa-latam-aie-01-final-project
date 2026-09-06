@@ -1,45 +1,45 @@
 #!/usr/bin/env python
 """
-TrackFlow — Telemetry Pipeline (Phase 2 & 3) — Refactored
-==========================================================
+TrackFlow — Pipeline de Telemetría (Fase 2 & 3) — Refactorizado
+=================================================================
 
-Applies the **Divide and Conquer** pattern: each ETL phase is isolated
-in an independent subflow (`@flow`) that strictly reflects the business
-metrics Daniel Espinoza needs on his dashboard.
+Aplica el patrón **Divide y Vencerás**: cada fase del pipeline ETL se
+aisla en un subflow independiente (`@flow`) que refleja estrictamente
+las métricas de negocio que Daniel Espinoza necesita en su dashboard.
 
-Phases:
+Fases:
 
-  [Extraction]
+  [Extracción]
     extract_shipment_volume_from_warehouses
-      ─ Reads events from `telemetry_events` (simulated via _SAMPLE_EVENTS).
+      ─ Lee eventos de `telemetry_events` (simulado con _SAMPLE_EVENTS).
 
-  [Transformation — 5 Executive KPIs]
-    calculate_shipping_volume         → Shipping volume (total + per warehouse)
-    calculate_on_time_delivery_rate   → On-time delivery rate
-    calculate_operational_cost        → Estimated operational cost
-    calculate_returns                 → Return metrics
-    calculate_customer_satisfaction   → Customer satisfaction index
+  [Transformación — 5 KPIs ejecutivos]
+    calculate_shipping_volume         → Volumen de envíos (total + por almacén)
+    calculate_on_time_delivery_rate   → Tasa de entrega a tiempo
+    calculate_operational_cost        → Coste operativo estimado
+    calculate_returns                 → Métricas de devoluciones
+    calculate_customer_satisfaction   → Satisfacción del cliente
 
-    assemble_executive_kpis           → Assembles the 5 KPIs into the final record
+    assemble_executive_kpis           → Ensambla los 5 KPIs en el registro final
 
-  [Load]
-    load_executive_kpis               → Persists with upsert ((fecha_reporte, id_corrida))
+  [Carga]
+    load_executive_kpis               → Persiste con upsert ((fecha_reporte, id_corrida))
 
-  [Optional]
-    notify_pipeline_status            → Validation snapshot (return_state=True)
+  [Opcional]
+    notify_pipeline_status            → Snapshot de validación (return_state=True)
 
-Resilience:
-  - Extraction and load tasks keep retries=3 / retry_delay_seconds=10.
+Resiliencia:
+  - Las tareas de extracción y carga mantienen retries=3 / retry_delay_seconds=10.
 
 Cache:
-  - Every transformation task uses cache_key_fn + cache_expiration=1h,
-    avoiding re-computation when the flow is triggered multiple times
-    on the same event set.
+  - Cada tarea de transformación usa cache_key_fn + cache_expiration=1h,
+    evitando recalcular KPIs si el flujo se ejecuta múltiples veces
+    sobre el mismo conjunto de eventos.
 
-Idempotency:
-  - The load simulates an upsert based on (fecha_reporte + id_corrida).
+Idempotencia:
+  - La carga simula un upsert basado en (fecha_reporte + id_corrida).
 
-Output contract (compatible with services/reporting/router.py):
+Contrato de salida (compatible con services/reporting/router.py):
   {
     "data": { <ExecutiveKPIs> },
     "table": "executive_kpis",
@@ -49,7 +49,7 @@ Output contract (compatible with services/reporting/router.py):
     "_metadata": { hora_inicio, hora_fin, duracion_segundos, ... }
   }
 
-Usage:
+Ejecución:
     python data/pipelines/pipeline.py
 """
 
@@ -66,7 +66,7 @@ from prefect import flow, task
 from prefect.logging import get_run_logger
 
 # ---------------------------------------------------------------------------
-# Environment configuration
+# Configuración de entorno
 # ---------------------------------------------------------------------------
 
 PIPELINE_ENV = os.getenv("PIPELINE_ENV", "development")
@@ -82,7 +82,7 @@ logging.basicConfig(
 logger = logging.getLogger("trackflow.pipeline")
 
 # ---------------------------------------------------------------------------
-# Sample input data  (UNALTERED — original ingestion logic)
+# Simulaciones de datos de entrada  (NO ALTERADA — ingesta original)
 # ---------------------------------------------------------------------------
 
 _SAMPLE_EVENTS: list[dict[str, Any]] = [
@@ -131,16 +131,16 @@ _SAMPLE_EVENTS: list[dict[str, Any]] = [
 ]
 
 # ---------------------------------------------------------------------------
-# Helper: generic cache key for transformation tasks
+# Helper: cache key genérico para tareas de transformación
 # ---------------------------------------------------------------------------
 
 
 def _metrics_cache_key(task_ctx: Any, inputs: dict[str, Any]) -> str:
-    """Generate a deterministic hash from the task name + event IDs.
+    """Genera un hash determinista a partir del nombre de tarea + eventos.
 
-    Includes ``task_ctx.task_key`` in the hash so that EACH task has its
-    own cache slot, preventing collisions among the 5 transformation
-    subflows that share this cache_key function.
+    Incluye task_ctx.task_key en el hash para que CADA tarea tenga
+    su propia entrada de caché, evitando colisiones entre los 5 subflows
+    de transformación que comparten esta función de cache_key.
     """
     events = inputs.get("events", [])
     sorted_ids = sorted(e["event_id"] for e in events)
@@ -150,92 +150,92 @@ def _metrics_cache_key(task_ctx: Any, inputs: dict[str, Any]) -> str:
 
 
 # ===================================================================
-# PHASE 1: EXTRACTION  (subflow)
+# FASE 1: EXTRACCIÓN  (subflow)
 # ===================================================================
 
 
 @flow(
     name="extract_shipment_volume_from_warehouses",
-    description="Reads telemetry events from the warehouses (Los Angeles and Zaragoza).",
+    description="Lee eventos de telemetría desde los almacenes (Los Ángeles y Zaragoza).",
     log_prints=True,
 )
 def extract_shipment_volume_from_warehouses() -> list[dict[str, Any]]:
-    """Extraction subflow: fetches raw events from the source.
+    """Subflow de extracción: obtiene los eventos brutos desde la fuente.
 
-    Preserves the original extraction logic unchanged, including 3 retries
-    to absorb transient warehouse network failures.
+    Mantiene la lógica original de ``extraer_telemetria`` sin alteraciones,
+    incluyendo los 3 reintentos para absorber fallos transitorios de red
+    de los almacenes.
 
     Returns:
-        List of telemetry event dicts (with event_id, warehouse, etc.).
+        Lista de eventos de telemetría (dicts con event_id, warehouse, etc.).
     """
     return _extract_events_task()
 
 
 @task(
     name="_extract_events_task",
-    description="Internal task that performs the simulated event read.",
+    description="Tarea interna que ejecuta la lectura simulada de eventos.",
     retries=3,
     retry_delay_seconds=10,
 )
 def _extract_events_task() -> list[dict[str, Any]]:
-    """Simulates reading telemetry events from the warehouses.
+    """Simula la lectura de eventos de telemetría desde los almacenes.
 
-    Retry justification:
-        The Los Angeles and Zaragoza warehouses operate on independent
-        systems with occasionally unstable network connections. With 3
-        retries and 10s delay between them we absorb transient failures
-        without manual intervention.
+    Justificación de reintentos:
+        Los almacenes de Los Ángeles y Zaragoza operan con sistemas
+        independientes y conexiones de red que no siempre son estables.
+        Con 3 reintentos y 10s de espera entre ellos absorbemos fallos
+        transitorios sin intervención manual.
     """
     log = get_run_logger()
     log.info(
-        "Extracting telemetry events from %s (environment: %s)...",
+        "Extrayendo eventos de telemetría desde %s (entorno: %s)...",
         RAW_DATA_DIR,
         PIPELINE_ENV,
     )
     events = _SAMPLE_EVENTS.copy()
-    log.info("Extracted %d events successfully.", len(events))
+    log.info("Extraídos %d eventos correctamente.", len(events))
     return events
 
 
 # ===================================================================
-# PHASE 2: TRANSFORMATION  —  CEO METRICS
+# FASE 2: TRANSFORMACIÓN  —  MÉTRICAS CEO
 # ===================================================================
-# Each business metric that Daniel Espinoza needs to visualise is an
-# independent subflow with its own cached internal task.
+# Cada métrica de negocio que Daniel Espinoza necesita visualizar es un
+# subflow independiente con su propia tarea interna cacheada.
 # ===================================================================
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Subflow 2a: Shipping Volume
+# Subflow 2a: Volumen de envíos  (Shipping Volume)
 # ─────────────────────────────────────────────────────────────────────
 
 
 @flow(
     name="calculate_shipping_volume",
-    description="KPI: Total shipping volume and breakdown per warehouse.",
+    description="KPI: Volumen total de envíos y desglose por almacén.",
     log_prints=True,
 )
 def calculate_shipping_volume(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute the total shipping volume and per-warehouse breakdown.
+    """Calcula el volumen de envíos total y por almacén.
 
     Args:
-        events: List of telemetry events.
+        events: Lista de eventos de telemetría.
 
     Returns:
-        Dict with ``total`` (int) and ``por_almacen`` (dict[str, int])
-        as required by the ExecutiveKPIs contract.
+        Dict con ``total`` (int) y ``por_almacen`` (dict[str, int]).
     """
     return _compute_shipping_volume_task(events)
 
 
 @task(
     name="_compute_shipping_volume",
-    description="Internal computation of shipping volume (cacheable 1h).",
+    description="Cómputo interno de volumen de envíos (cacheable 1h).",
     cache_key_fn=_metrics_cache_key,
     cache_expiration=timedelta(hours=1),
 )
 def _compute_shipping_volume_task(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Processes ``shipment.created`` events and groups by warehouse."""
+    """Procesa los eventos ``shipment.created`` y agrupa por almacén."""
     log = get_run_logger()
     created = [e for e in events if e["event_type"] == "shipment.created"]
 
@@ -246,45 +246,45 @@ def _compute_shipping_volume_task(events: list[dict[str, Any]]) -> dict[str, Any
         by_warehouse[w] = by_warehouse.get(w, 0) + 1
 
     result = {"total": total, "por_almacen": by_warehouse}
-    log.info("Shipping volume → total=%d, por_almacen=%s", total, by_warehouse)
+    log.info("Volumen de envíos → total=%d, por_almacen=%s", total, by_warehouse)
     return result
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Subflow 2b: On-Time Delivery Rate
+# Subflow 2b: Tasa de entrega a tiempo  (On-Time Delivery Rate)
 # ─────────────────────────────────────────────────────────────────────
 
 
 @flow(
     name="calculate_on_time_delivery_rate",
-    description="KPI: Percentage of deliveries completed on time.",
+    description="KPI: Porcentaje de entregas realizadas a tiempo.",
     log_prints=True,
 )
 def calculate_on_time_delivery_rate(
     events: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Compute the on-time delivery rate over total deliveries.
+    """Calcula la tasa de entregas a tiempo sobre el total de entregas.
 
     Args:
-        events: List of telemetry events.
+        events: Lista de eventos de telemetría.
 
     Returns:
-        Dict with ``porcentaje`` (float), ``entregas_on_time`` (int),
-        ``entregas_totales`` (int) as required by the reporting contract.
+        Dict con ``porcentaje`` (float), ``entregas_on_time`` (int),
+        ``entregas_totales`` (int).
     """
     return _compute_delivery_rate_task(events)
 
 
 @task(
     name="_compute_delivery_rate",
-    description="Internal computation of delivery rate (cacheable 1h).",
+    description="Cómputo interno de tasa de entrega a tiempo (cacheable 1h).",
     cache_key_fn=_metrics_cache_key,
     cache_expiration=timedelta(hours=1),
 )
 def _compute_delivery_rate_task(
     events: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Inspects ``shipment.delivered`` events and their ``on_time`` flag."""
+    """Examina eventos ``shipment.delivered`` y su flag ``on_time``."""
     log = get_run_logger()
     delivered = [e for e in events if e["event_type"] == "shipment.delivered"]
 
@@ -298,7 +298,7 @@ def _compute_delivery_rate_task(
         "entregas_totales": total,
     }
     log.info(
-        "On-time delivery rate → %.2f%% (%d/%d)",
+        "Tasa de entrega a tiempo → %.2f%% (%d/%d)",
         pct,
         on_time,
         total,
@@ -307,48 +307,48 @@ def _compute_delivery_rate_task(
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Subflow 2c: Operational Cost
+# Subflow 2c: Coste operativo  (Operational Cost)
 # ─────────────────────────────────────────────────────────────────────
 
 
 @flow(
     name="calculate_operational_cost",
-    description="KPI: Estimated operational cost of the shipping operation.",
+    description="KPI: Coste operativo estimado de la operativa de envíos.",
     log_prints=True,
 )
 def calculate_operational_cost(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Estimate total operational cost from events.
+    """Estima el coste operativo total a partir de los eventos.
 
-    Cost model (business rules):
-      - $10.00 per shipment.created (handling)
-      - $ 5.00 per shipment.delivered (delivery)
-      - $15.00 per return.* (reverse logistics)
+    Modelo de costes (business rules):
+      - $10.00 por cada shipment.created (handling)
+      - $ 5.00 por cada shipment.delivered (delivery)
+      - $15.00 por cada return.* (logística inversa)
 
     Args:
-        events: List of telemetry events.
+        events: Lista de eventos de telemetría.
 
     Returns:
-        Dict with ``total`` (float), ``breakdown`` (dict),
-        ``currency`` (str).
+        Dict con ``total`` (float), ``desglose`` (dict),
+        ``moneda`` (str).
     """
     return _compute_operational_cost_task(events)
 
 
 @task(
     name="_compute_operational_cost",
-    description="Internal cost computation (cacheable 1h).",
+    description="Cómputo interno de coste operativo (cacheable 1h).",
     cache_key_fn=_metrics_cache_key,
     cache_expiration=timedelta(hours=1),
 )
 def _compute_operational_cost_task(
     events: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Applies unit-cost model over classified events."""
+    """Aplica el modelo de costes unitarios sobre los eventos clasificados."""
     log = get_run_logger()
 
     created = [e for e in events if e["event_type"] == "shipment.created"]
     delivered = [e for e in events if e["event_type"] == "shipment.delivered"]
-    returns = [e for e in events if isinstance(e["event_type"], str) and e["event_type"].startswith("return.")]
+    returns = [e for e in events if e["event_type"].startswith("return.")]
 
     HANDLING_COST = 10.0
     DELIVERY_COST = 5.0
@@ -361,20 +361,20 @@ def _compute_operational_cost_task(
 
     result = {
         "total": round(grand_total, 2),
-        "breakdown": {
+        "desglose": {
             "handling": round(handling_total, 2),
             "delivery": round(delivery_total, 2),
             "returns_reverse_logistics": round(returns_total, 2),
         },
-        "currency": "USD",
-        "unit_costs": {
+        "moneda": "USD",
+        "unidades": {
             "handling_cost_per_shipment": HANDLING_COST,
             "delivery_cost_per_shipment": DELIVERY_COST,
             "return_cost_per_return": RETURN_COST,
         },
     }
     log.info(
-        "Operational cost → $%.2f (handling=$%.2f, delivery=$%.2f, returns=$%.2f)",
+        "Coste operativo → $%.2f (handling=$%.2f, delivery=$%.2f, returns=$%.2f)",
         grand_total,
         handling_total,
         delivery_total,
@@ -384,39 +384,38 @@ def _compute_operational_cost_task(
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Subflow 2d: Returns
+# Subflow 2d: Devoluciones  (Returns)
 # ─────────────────────────────────────────────────────────────────────
 
 
 @flow(
     name="calculate_returns",
-    description="KPI: Return volume and rate relative to total shipments.",
+    description="KPI: Volumen y tasa de devoluciones sobre el total de envíos.",
     log_prints=True,
 )
 def calculate_returns(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute return metrics.
+    """Calcula las métricas de devoluciones.
 
     Args:
-        events: List of telemetry events.
+        events: Lista de eventos de telemetría.
 
     Returns:
-        Dict with ``volumen`` (int) and ``tasa_porcentaje`` (float)
-        as required by the ExecutiveKPIs contract.
+        Dict con ``volumen`` (int) y ``tasa_porcentaje`` (float).
     """
     return _compute_returns_task(events)
 
 
 @task(
     name="_compute_returns",
-    description="Internal returns computation (cacheable 1h).",
+    description="Cómputo interno de métricas de devoluciones (cacheable 1h).",
     cache_key_fn=_metrics_cache_key,
     cache_expiration=timedelta(hours=1),
 )
 def _compute_returns_task(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Examines events whose type starts with ``return.``."""
+    """Examina eventos cuyo tipo comienza por ``return.``."""
     log = get_run_logger()
 
-    returns = [e for e in events if isinstance(e["event_type"], str) and e["event_type"].startswith("return.")]
+    returns = [e for e in events if e["event_type"].startswith("return.")]
     created = [e for e in events if e["event_type"] == "shipment.created"]
 
     volume = len(returns)
@@ -427,54 +426,54 @@ def _compute_returns_task(events: list[dict[str, Any]]) -> dict[str, Any]:
         "volumen": volume,
         "tasa_porcentaje": round(rate, 2),
     }
-    log.info("Returns → volumen=%d, tasa=%.2f%%", volume, rate)
+    log.info("Devoluciones → volumen=%d, tasa=%.2f%%", volume, rate)
     return result
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Subflow 2e: Customer Satisfaction
+# Subflow 2e: Satisfacción del cliente  (Customer Satisfaction)
 # ─────────────────────────────────────────────────────────────────────
 
 
 @flow(
     name="calculate_customer_satisfaction",
-    description="KPI: Customer satisfaction index derived from deliveries and returns.",
+    description="KPI: Índice de satisfacción del cliente derivado de entregas y devoluciones.",
     log_prints=True,
 )
 def calculate_customer_satisfaction(
     events: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Estimate customer satisfaction on a 0–100 scale.
+    """Estima la satisfacción del cliente en escala 0–100.
 
-    Business rule:
-      - Base: 100 points.
-      - 20-point penalty per late delivery.
-      - 10-point penalty per return.
-      - Result is clamped between 0 and 100.
+    Regla de negocio:
+      - Base: 100 puntos.
+      - Penalización de 20 puntos por cada entrega fuera de tiempo.
+      - Penalización de 10 puntos por cada devolución.
+      - El resultado se clamp entre 0 y 100.
 
     Args:
-        events: List of telemetry events.
+        events: Lista de eventos de telemetría.
 
     Returns:
-        Dict with ``score`` (float), ``level`` (str), ``penalties`` (dict).
+        Dict con ``indice`` (float), ``nivel`` (str), ``penalizaciones`` (dict).
     """
     return _compute_customer_satisfaction_task(events)
 
 
 @task(
     name="_compute_customer_satisfaction",
-    description="Internal satisfaction computation (cacheable 1h).",
+    description="Cómputo interno de satisfacción del cliente (cacheable 1h).",
     cache_key_fn=_metrics_cache_key,
     cache_expiration=timedelta(hours=1),
 )
 def _compute_customer_satisfaction_task(
     events: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Applies penalty model over late deliveries and returns."""
+    """Aplica el modelo de penalizaciones sobre entregas tardías y devoluciones."""
     log = get_run_logger()
 
     delivered = [e for e in events if e["event_type"] == "shipment.delivered"]
-    returns = [e for e in events if isinstance(e["event_type"], str) and e["event_type"].startswith("return.")]
+    returns = [e for e in events if e["event_type"].startswith("return.")]
 
     late_deliveries = sum(
         1 for e in delivered if not e["payload"].get("on_time")
@@ -488,23 +487,23 @@ def _compute_customer_satisfaction_task(
     clamped = max(0.0, min(100.0, raw_score))
 
     if clamped >= 80:
-        level = "high"
+        level = "alta"
     elif clamped >= 50:
-        level = "medium"
+        level = "media"
     else:
-        level = "low"
+        level = "baja"
 
     result = {
-        "score": round(clamped, 2),
-        "level": level,
-        "penalties": {
+        "indice": round(clamped, 2),
+        "nivel": level,
+        "penalizaciones": {
             "late_deliveries": late_deliveries,
             "returns": total_returns,
         },
-        "scale": "0-100",
+        "escala": "0-100",
     }
     log.info(
-        "Customer satisfaction → score=%.2f, level=%s, "
+        "Satisfacción del cliente → índice=%.2f, nivel=%s, "
         "late_deliveries=%d, returns=%d",
         clamped,
         level,
@@ -515,13 +514,13 @@ def _compute_customer_satisfaction_task(
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Assembly task: combines the 5 KPIs into the final record
+# Tarea de ensamblaje: combina los 5 KPIs en el registro final
 # ─────────────────────────────────────────────────────────────────────
 
 
 @task(
     name="assemble_executive_kpis",
-    description="Assembles the 5 individual KPIs into the final executive record.",
+    description="Ensambla los 5 KPIs individuales en el registro ejecutivo final.",
 )
 def assemble_executive_kpis(
     events: list[dict[str, Any]],
@@ -531,21 +530,21 @@ def assemble_executive_kpis(
     returns: dict[str, Any],
     customer_satisfaction: dict[str, Any],
 ) -> dict[str, Any]:
-    """Combines all KPIs into a single ``ExecutiveKPIs`` record.
+    """Combina todos los KPIs en un único registro ``ExecutiveKPIs``.
 
-    Includes the unique run identifier (event hash) and idempotency
-    fields (``fecha_reporte``, ``id_corrida``).
+    Incluye el identificador único de corrida (hash de eventos) y los
+    campos de idempotencia (``fecha_reporte``, ``id_corrida``).
 
     Args:
-        events:               Original event list (for the run hash).
-        shipping_volume:      Result from ``calculate_shipping_volume``.
-        on_time_delivery:     Result from ``calculate_on_time_delivery_rate``.
-        operational_cost:     Result from ``calculate_operational_cost``.
-        returns:              Result from ``calculate_returns``.
-        customer_satisfaction: Result from ``calculate_customer_satisfaction``.
+        events:           Lista original de eventos (para generar el hash).
+        shipping_volume:  Resultado de ``calculate_shipping_volume``.
+        on_time_delivery: Resultado de ``calculate_on_time_delivery_rate``.
+        operational_cost: Resultado de ``calculate_operational_cost``.
+        returns:          Resultado de ``calculate_returns``.
+        customer_satisfaction: Resultado de ``calculate_customer_satisfaction``.
 
     Returns:
-        Dict with the full ExecutiveKPIs structure.
+        Dict con la estructura completa del ExecutiveKPIs.
     """
     log = get_run_logger()
 
@@ -560,65 +559,63 @@ def assemble_executive_kpis(
         "id_corrida": run_id,
         "timestamp": now_iso,
         "periodo": "2026-09-03",
-        # ── Contract fields (Spanish, consumed by reporting/router.py) ──
         "volumen_envios": shipping_volume,
         "tasa_entrega_tiempo": on_time_delivery,
+        "coste_operativo": operational_cost,
         "devoluciones": returns,
-        # ── New CEO KPI fields (English) ──
-        "operational_cost": operational_cost,
-        "customer_satisfaction": customer_satisfaction,
+        "satisfaccion_cliente": customer_satisfaction,
     }
 
-    log.info("Executive KPIs assembled: %s", json.dumps(kpis, indent=2))
+    log.info("KPIs ejecutivos ensamblados: %s", json.dumps(kpis, indent=2))
     return kpis
 
 
 # ===================================================================
-# PHASE 3: LOAD  (subflow)
+# FASE 3: CARGA  (subflow)
 # ===================================================================
 
 
 @flow(
     name="load_executive_kpis",
-    description="Prepares KPI write to the destination table with upsert.",
+    description="Prepara la escritura de los KPIs en la tabla destino con upsert.",
     log_prints=True,
 )
 def load_executive_kpis(kpis: dict[str, Any]) -> dict[str, Any]:
-    """Load subflow: wraps the upsert task with retries.
+    """Subflow de carga: envuelve la tarea de upsert con retries.
 
     Args:
-        kpis: Complete executive KPI record.
+        kpis: Registro completo de KPIs ejecutivos.
 
     Returns:
-        Dict with load operation metadata.
+        Dict con metadatos de la operación de carga.
     """
     return _upsert_kpis_task(kpis)
 
 
 @task(
     name="_upsert_kpis_task",
-    description="Internal task that simulates the upsert on the destination table.",
+    description="Tarea interna que simula el upsert en la tabla destino.",
     retries=3,
     retry_delay_seconds=10,
 )
 def _upsert_kpis_task(kpis: dict[str, Any]) -> dict[str, Any]:
-    """Simulates an upsert on ``executive_kpis``.
+    """Simula un upsert sobre ``executive_kpis``.
 
-    Idempotency is guaranteed by a unique constraint on
-    ``fecha_reporte`` + ``id_corrida``.
+    La idempotencia se garantiza mediante un constraint único compuesto
+    por ``fecha_reporte`` + ``id_corrida``.
 
-    Retry justification:
-        Similarly to extraction, the destination database connection may
-        experience transient interruptions. Automated retries prevent a
-        latency spike from halting the pipeline.
+    Justificación de reintentos:
+        Al igual que en extracción, la conexión a la base de datos destino
+        puede presentar cortes transitorios. Los reintentos automatizados
+        evitan que un pico de latencia detenga el pipeline.
     """
     log = get_run_logger()
-    log.info("Preparing load to table '%s'...", TARGET_TABLE)
+    log.info("Preparando carga hacia tabla '%s'...", TARGET_TABLE)
 
     fecha_reporte = kpis.get("fecha_reporte", "unknown")
     id_corrida = kpis.get("id_corrida", "unknown")
 
-    record: dict[str, Any] = {
+    registro: dict[str, Any] = {
         "table": TARGET_TABLE,
         "data": kpis,
         "loaded_at": datetime.now(timezone.utc).isoformat(),
@@ -637,145 +634,145 @@ def _upsert_kpis_task(kpis: dict[str, Any]) -> dict[str, Any]:
                 "  timestamp = EXCLUDED.timestamp,"
                 "  volumen_envios = EXCLUDED.volumen_envios,"
                 "  tasa_entrega_tiempo = EXCLUDED.tasa_entrega_tiempo,"
-                "  operational_cost = EXCLUDED.operational_cost,"
+                "  coste_operativo = EXCLUDED.coste_operativo,"
                 "  devoluciones = EXCLUDED.devoluciones,"
-                "  customer_satisfaction = EXCLUDED.customer_satisfaction,"
+                "  satisfaccion_cliente = EXCLUDED.satisfaccion_cliente,"
                 "  loaded_at = EXCLUDED.loaded_at;"
             ),
         },
     }
 
-    log.info("UPSERT simulated on (%s, %s)", fecha_reporte, id_corrida)
+    log.info("UPSERT simulado sobre (%s, %s)", fecha_reporte, id_corrida)
     log.info(
-        "Record prepared: %s",
-        json.dumps(record, indent=2),
+        "Registro preparado: %s",
+        json.dumps(registro, indent=2),
     )
-    return record
+    return registro
 
 
 # ===================================================================
-# OPTIONAL SUBFLOW: Pipeline status notification
+# SUBFLOW OPCIONAL: Notificación de estado
 # ===================================================================
 
 
 @flow(
     name="notify_pipeline_status",
-    description="Validation snapshot or pipeline status notification (non-critical).",
+    description="Snapshot de validación o notificación de estado del pipeline (no crítico).",
     log_prints=True,
 )
-def notify_pipeline_status(load_result: dict[str, Any]) -> str:
-    """Non-critical subflow: generates a validation snapshot.
+def notify_pipeline_status(resultado_carga: dict[str, Any]) -> str:
+    """Subflow NO crítico: genera un snapshot de validación.
 
-    Invoked with ``return_state=True`` from the main flow, so a failure
-    does not interrupt the pipeline.
+    Invocado con ``return_state=True`` desde el flujo principal, de modo
+    que si falla, el pipeline continúa sin interrupción.
 
     Args:
-        load_result: Output of ``load_executive_kpis``.
+        resultado_carga: Output de ``load_executive_kpis``.
 
     Returns:
-        ``"notification_sent"`` on success.
+        "notificacion_enviada" en caso de éxito.
     """
-    return _build_notification_task(load_result)
+    return _build_notification_task(resultado_carga)
 
 
 @task(
     name="_build_notification_task",
-    description="Internal task that builds the validation snapshot.",
+    description="Tarea interna que construye el snapshot de validación.",
 )
-def _build_notification_task(load_result: dict[str, Any]) -> str:
-    """Builds the status snapshot and logs it."""
+def _build_notification_task(resultado_carga: dict[str, Any]) -> str:
+    """Construye el snapshot de estado y lo registra en los logs."""
     log = get_run_logger()
-    log.info("Generating validation snapshot...")
+    log.info("Generando snapshot de validación...")
 
     notification: dict[str, Any] = {
-        "type": "pipeline_snapshot",
-        "status": "completed",
+        "tipo": "pipeline_snapshot",
+        "estado": "completado",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "records_loaded": load_result.get("status") == "ready",
-        "destination_table": load_result.get("table"),
-        "upsert_constraint": load_result.get(
+        "registros_cargados": resultado_carga.get("status") == "ready",
+        "tabla_destino": resultado_carga.get("table"),
+        "upsert_constraint": resultado_carga.get(
             "upsert_constraint", {}
         ).get("primary_key"),
     }
 
-    # ⚠️ Simulate failure when NOTIFY_FAIL env var is set
+    # ⚠️ Simulación de fallo si la variable de entorno NOTIFY_FAIL está activa
     if os.getenv("NOTIFY_FAIL", "").lower() in ("1", "true", "yes"):
-        msg = "Notification service unavailable (simulated)."
+        msg = "Servicio de notificaciones no disponible (simulado)."
         log.error(msg)
         raise RuntimeError(msg)
 
-    log.info("Snapshot generated: %s", json.dumps(notification, indent=2))
-    return "notification_sent"
+    log.info("Snapshot generado: %s", json.dumps(notification, indent=2))
+    return "notificacion_enviada"
 
 
 # ===================================================================
-# MAIN FLOW  —  Orchestrator
+# FLUJO PRINCIPAL  —  Orquestador
 # ===================================================================
 
 
 @flow(
     name="trackflow_pipeline_telemetria",
-    description="TrackFlow telemetry ETL pipeline — Phase 2 & 3 (refactored).",
+    description="Pipeline ETL de telemetría TrackFlow — Fase 2 & 3 (refactorizado).",
     log_prints=True,
 )
 def trackflow_pipeline_telemetria() -> dict[str, Any]:
-    """Main pipeline orchestrator.
+    """Orquestador principal del pipeline de telemetría.
 
-    Applies Divide and Conquer by coordinating independent subflows:
+    Aplica Divide y Vencerás coordinando subflows independientes:
 
-      1.  extract_shipment_volume_from_warehouses  (Extraction)
-      2.  calculate_shipping_volume                (Transformation: volume)
-      3.  calculate_on_time_delivery_rate          (Transformation: on-time)
-      4.  calculate_operational_cost               (Transformation: cost)
-      5.  calculate_returns                        (Transformation: returns)
-      6.  calculate_customer_satisfaction          (Transformation: satisfaction)
-      7.  assemble_executive_kpis                  (Assembly)
-      8.  load_executive_kpis                      (Load)
-      9.  notify_pipeline_status (return_state)    (Optional)
+      1.  extract_shipment_volume_from_warehouses  (Extracción)
+      2.  calculate_shipping_volume                (Transformación: volumen)
+      3.  calculate_on_time_delivery_rate          (Transformación: on-time)
+      4.  calculate_operational_cost               (Transformación: coste)
+      5.  calculate_returns                        (Transformación: devoluciones)
+      6.  calculate_customer_satisfaction          (Transformación: satisfacción)
+      7.  assemble_executive_kpis                  (Ensamblaje)
+      8.  load_executive_kpis                      (Carga)
+      9.  notify_pipeline_status (return_state)    (Opcional)
 
     Returns:
-        Dict with the load structure (``data`` + execution metadata),
-        compatible with the contract expected by ``services/reporting/router.py``.
+        Dict con la estructura de cargo (``data`` + metadatos de ejecución),
+        compatible con el contrato que espera ``services/reporting/router.py``.
     """
     from prefect.context import get_run_context
 
     flow_logger = get_run_logger()
     hora_inicio = datetime.now(timezone.utc)
 
-    flow_logger.info("═══ Starting TrackFlow telemetry pipeline ═══")
+    flow_logger.info("═══ Iniciando pipeline de telemetría TrackFlow ═══")
     flow_logger.info(
-        "Environment: %s | Target table: %s | Start time: %s",
+        "Entorno: %s | Tabla destino: %s | Hora inicio: %s",
         PIPELINE_ENV,
         TARGET_TABLE,
         hora_inicio.isoformat(),
     )
 
-    # ── 1. Extraction ─────────────────────────────────────────────────
-    flow_logger.info("─── Phase 1: Extraction ────────────────────────────")
+    # ── 1. Extracción ─────────────────────────────────────────────────
+    flow_logger.info("─── Fase 1: Extracción ─────────────────────────────")
     raw_events = extract_shipment_volume_from_warehouses()
     registros_extraidos = len(raw_events)
-    flow_logger.info("Extraction complete: %d events.", registros_extraidos)
+    flow_logger.info("Extracción completada: %d eventos.", registros_extraidos)
 
-    # ── 2. Transformation — 5 CEO KPIs ────────────────────────────────
-    flow_logger.info("─── Phase 2: Transformation (5 CEO KPIs) ───────────")
+    # ── 2. Transformación — 5 KPIs ejecutivos ─────────────────────────
+    flow_logger.info("─── Fase 2: Transformación (5 KPIs CEO) ────────────")
 
     shipping_volume = calculate_shipping_volume(raw_events)
-    flow_logger.info("✓ Shipping volume: %s", shipping_volume)
+    flow_logger.info("✓ Volumen de envíos: %s", shipping_volume)
 
     delivery_rate = calculate_on_time_delivery_rate(raw_events)
-    flow_logger.info("✓ On-time delivery rate: %s", delivery_rate)
+    flow_logger.info("✓ Tasa de entrega a tiempo: %s", delivery_rate)
 
     operational_cost = calculate_operational_cost(raw_events)
-    flow_logger.info("✓ Operational cost: %s", operational_cost)
+    flow_logger.info("✓ Coste operativo: %s", operational_cost)
 
     returns = calculate_returns(raw_events)
-    flow_logger.info("✓ Returns: %s", returns)
+    flow_logger.info("✓ Devoluciones: %s", returns)
 
     satisfaction = calculate_customer_satisfaction(raw_events)
-    flow_logger.info("✓ Customer satisfaction: %s", satisfaction)
+    flow_logger.info("✓ Satisfacción del cliente: %s", satisfaction)
 
-    # ── Assemble KPIs ────────────────────────────────────────────────
-    flow_logger.info("─── KPI Assembly ───────────────────────────────────")
+    # ── Ensamblar KPIs ───────────────────────────────────────────────
+    flow_logger.info("─── Ensamblaje de KPIs ─────────────────────────────")
     executive_kpis = assemble_executive_kpis(
         events=raw_events,
         shipping_volume=shipping_volume,
@@ -784,52 +781,52 @@ def trackflow_pipeline_telemetria() -> dict[str, Any]:
         returns=returns,
         customer_satisfaction=satisfaction,
     )
-    flow_logger.info("KPIs assembled correctly.")
+    flow_logger.info("KPIs ensamblados correctamente.")
 
-    # ── 3. Load ──────────────────────────────────────────────────────
-    flow_logger.info("─── Phase 3: Load ──────────────────────────────────")
+    # ── 3. Carga ─────────────────────────────────────────────────────
+    flow_logger.info("─── Fase 3: Carga ───────────────────────────────────")
     load_result = load_executive_kpis(executive_kpis)
-    flow_logger.info("Load prepared (upsert strategy).")
+    flow_logger.info("Carga preparada (estrategia upsert).")
 
-    # ── 4. Non-critical notification (return_state=True) ──────────────
-    flow_logger.info("─── Notification (optional) ────────────────────────")
+    # ── 4. Notificación NO crítica (return_state=True) ────────────────
+    flow_logger.info("─── Notificación (opcional) ─────────────────────────")
     notification_state = notify_pipeline_status.with_options(retries=0)(
         load_result, return_state=True
     )
 
     errors: list[str] = []
     if notification_state.is_completed():
-        flow_logger.info("Notification sent successfully.")
+        flow_logger.info("Notificación enviada correctamente.")
     else:
         msg = str(
             notification_state.message
-            or "Unknown error in notification"
+            or "Error desconocido en notificación"
         )
         flow_logger.warning(
-            "Notification task failed (reason: %s) — "
-            "main pipeline continues uninterrupted.",
+            "La tarea de notificación falló (razón: %s) — "
+            "el pipeline principal continúa sin interrupción.",
             msg,
         )
         errors.append(msg)
 
-    # ── Run metadata ─────────────────────────────────────────────────
+    # ── Metadata de la corrida ───────────────────────────────────────
     hora_fin = datetime.now(timezone.utc)
     duracion = (hora_fin - hora_inicio).total_seconds()
     estado_final = "Completed"
 
-    flow_logger.info("═══ Pipeline finished ═══")
-    flow_logger.info("Execution metadata:")
-    flow_logger.info("  Start time        : %s", hora_inicio.isoformat())
-    flow_logger.info("  End time          : %s", hora_fin.isoformat())
-    flow_logger.info("  Duration (sec)    : %.2f", duracion)
-    flow_logger.info("  Records extracted : %d", registros_extraidos)
-    flow_logger.info("  KPIs computed     : 5 (volume, on-time, cost, returns, satisfaction)")
-    flow_logger.info("  Final status      : %s", estado_final)
+    flow_logger.info("═══ Pipeline finalizado ═══")
+    flow_logger.info("Metadata de la corrida:")
+    flow_logger.info("  Hora inicio        : %s", hora_inicio.isoformat())
+    flow_logger.info("  Hora fin           : %s", hora_fin.isoformat())
+    flow_logger.info("  Duración (seg)     : %.2f", duracion)
+    flow_logger.info("  Registros extraídos: %d", registros_extraidos)
+    flow_logger.info("  KPIs calculados    : 5 (volumen, on-time, coste, devoluciones, satisfacción)")
+    flow_logger.info("  Estado final       : %s", estado_final)
 
     ctx = get_run_context()
     flow_run_id = ctx.flow_run.id if ctx.flow_run else "N/A"
 
-    # ── Embed metadata in result (router contract) ───────────────────
+    # ── Incrustar metadata en el resultado (contrato con router) ──────
     load_result["_metadata"] = {
         "hora_inicio": hora_inicio.isoformat(),
         "hora_fin": hora_fin.isoformat(),
@@ -844,7 +841,7 @@ def trackflow_pipeline_telemetria() -> dict[str, Any]:
 
 
 # ===================================================================
-# CLI execution
+# Ejecución CLI
 # ===================================================================
 
 if __name__ == "__main__":
