@@ -1,0 +1,31 @@
+{
+  "fecha_reporte": "2026-09-07",
+  "volumen_envios": {
+    "total": 0,
+    "por_almacen": {}
+  },
+  "tasa_entrega_puntual": {
+    "total_delivered": 0,
+    "on_time": 0,
+    "rate": 0.0
+  },
+  "costos_operativos": {
+    "total_cost": 0.0,
+    "count": 0,
+    "avg_cost": 0.0
+  },
+  "devoluciones": {
+    "total_returns": 0,
+    "by_reason": {}
+  },
+  "satisfaccion_cliente": {
+    "avg_rating": 0.0,
+    "count": 0,
+    "distribution": {}
+  },
+  "_metadata": {
+    "pipeline": "telemetry_kpi_daily",
+    "generated_at": "2026-09-08T01:15:35.352336+00:00",
+    "events_processed": 3
+  }
+}

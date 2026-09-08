@@ -94,3 +94,31 @@ class ProfileTable(SQLModel, table=True):
     name: str = Field(max_length=200, nullable=False)
     phone: str = Field(max_length=30, nullable=False)
     address: str = Field(max_length=300, nullable=False)
+
+
+# ── Job Run SQLModel table ────────────────────────────────────────────────
+
+
+class JobRunTable(SQLModel, table=True):
+    """SQLModel table for automated nightly job orchestration.
+
+    This table is EXCLUSIVELY for script orchestration lifecycle tracking
+    and idempotency control. It has NO foreign keys or relationships with
+    pipeline_runs or any other table — they are completely separate data layers.
+    """
+
+    __tablename__ = "job_runs"
+
+    id: str = Field(default_factory=_new_uuid, primary_key=True)
+    job_name: str = Field(nullable=False, index=False)  # indexed via composite
+    target_date: str = Field(nullable=False)             # DATE stored as str
+    status: str = Field(
+        default="pending",
+        nullable=False,
+        # CHECK enforced at DB level via migration:
+        # status IN ('pending', 'processing', 'completed', 'failed')
+    )
+    started_at: Optional[datetime] = Field(default=None, nullable=True)
+    finished_at: Optional[datetime] = Field(default=None, nullable=True)
+    error_message: Optional[str] = Field(default=None, nullable=True)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)

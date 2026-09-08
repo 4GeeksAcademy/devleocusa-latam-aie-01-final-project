@@ -2,7 +2,7 @@
 
 Endpoints:
     POST /telemetry/events  —  Receive, validate, and persist a batch
-                               of telemetry events into Supabase.
+                               of telemetry events into PostgreSQL.
     GET  /telemetry/report  —  Aggregated operational metrics for a
                                given time window (cached for 60 s).
 """
@@ -30,23 +30,19 @@ _report_cache = TTLCache(ttl_seconds=60)
 
 
 # ──────────────────────────────────────────────
-# Supabase client (lazy initialisation)
+# Database connection (lazy initialisation)
 # ──────────────────────────────────────────────
 
-def _get_supabase_client():
-    """Create and return a Supabase client using environment credentials."""
-    from supabase import create_client
+def _get_sql_connection():
+    """Create and return a psycopg2 connection using ``SQL_URL``."""
+    import psycopg2
 
-    supabase_url = os.environ.get("SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
-
-    if not supabase_url or not supabase_key:
+    sql_url = os.environ.get("SQL_URL")
+    if not sql_url:
         raise RuntimeError(
-            "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in the "
-            "environment to persist telemetry events."
+            "SQL_URL must be set in the environment to persist telemetry events."
         )
-
-    return create_client(supabase_url, supabase_key)
+    return psycopg2.connect(sql_url)
 
 
 # ──────────────────────────────────────────────
@@ -61,8 +57,9 @@ def receive_events(body: dict[str, Any]) -> dict[str, int]:
     Each event is validated individually via
     ``TelemetryEvent.model_validate()`` so that a single malformed
     event does **not** cancel the whole batch.  Valid events are
-    bulk-inserted into the ``telemetry_events`` table using the official
-    Supabase Python client in one operation.
+    bulk-inserted into the ``telemetry_events`` table in a single
+    operation via psycopg2 using the ``SQL_URL`` environment variable
+    (the same Postgres connection string used by the rest of the project).
     """
     raw_events: list[Any] = body.get("events", [])
     received = len(raw_events)
@@ -106,14 +103,41 @@ def receive_events(body: dict[str, Any]) -> dict[str, int]:
         }
         valid_rows.append(row)
 
-    # ── 2. Bulk insert via Supabase Python client ────────────────────
+    # ── 2. Bulk insert via psycopg2 (SQL_URL) ────────────────────────
     stored = 0
 
     if valid_rows:
         try:
-            client = _get_supabase_client()
-            response = client.table("telemetry_events").insert(valid_rows).execute()
-            stored = len(response.data) if response.data else len(valid_rows)
+            import psycopg2.extras
+
+            # Wrap payload/tags so Python dicts adapt to jsonb columns
+            from psycopg2.extras import Json
+
+            conn = _get_sql_connection()
+            try:
+                with conn.cursor() as cur:
+                    psycopg2.extras.execute_values(
+                        cur,
+                        """
+                        INSERT INTO telemetry_events
+                            (id, event_type, timestamp, payload, tags)
+                        VALUES %s
+                        """,
+                        [
+                            (
+                                row["id"],
+                                row["event_type"],
+                                row["timestamp"],
+                                Json(row["payload"]),
+                                Json(row["tags"]),
+                            )
+                            for row in valid_rows
+                        ],
+                    )
+                conn.commit()
+                stored = len(valid_rows)
+            finally:
+                conn.close()
 
             logger.info(
                 "Telemetry batch persisted — received=%d stored=%d rejected=%d",
@@ -137,7 +161,7 @@ def receive_events(body: dict[str, Any]) -> dict[str, int]:
 
 
 # ───────────────────────────────────────────────────────────────────
-# Helper: fetch telemetry rows from Supabase within a time window
+# Helper: fetch telemetry rows within a time window
 # ───────────────────────────────────────────────────────────────────
 
 def _fetch_events(start: datetime, end: datetime) -> list[dict[str, Any]]:
@@ -222,7 +246,7 @@ def get_report(
 
     logger.debug("Report cache MISS for window %s", cache_key)
 
-    # ── 3. Fetch raw data from Supabase ─────────────────────────────────
+    # ── 3. Fetch raw data from PostgreSQL ───────────────────────────────
     raw_rows = _fetch_events(_start, _end)
 
     if not raw_rows:
