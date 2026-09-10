@@ -8,6 +8,10 @@
 #   docker compose down     # Stop and remove containers
 #   docker compose logs -f  # Follow logs from all services
 
+# ── Shared environment variables ───────────────────────────────────────
+x-common-env: &common-env
+  REDIS_URL: "redis://redis:6379/0"
+
 services:
 
   # ── Backend API (FastAPI + Flask) ─────────────────────────────────────
@@ -20,6 +24,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      <<: *common-env
     volumes:
       # Bind-mount source code for hot-reload (--reload in uvicorn)
       - ./services/api:/app
@@ -43,6 +49,8 @@ services:
       - "3001:3001"
     env_file:
       - .env
+    environment:
+      <<: *common-env
     depends_on:
       - api
     volumes:
@@ -57,6 +65,52 @@ services:
       - /app/backoffice/node_modules
       - /app/website/.next
       - /app/backoffice/.next
+    networks:
+      - trackflow-net
+
+  # ── Redis (message broker) ──────────────────────────────────────────
+  redis:
+    image: redis:alpine
+    container_name: trackflow-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory-policy noeviction
+    environment:
+      <<: *common-env
+    networks:
+      - trackflow-net
+
+  # ── Celery Worker (async task processor) ─────────────────────────────
+  celery-worker:
+    build:
+      context: ./services
+      dockerfile: Dockerfile
+    container_name: trackflow-worker
+    command: celery -A src.celery_app worker -l info --concurrency=2
+    env_file:
+      - .env
+    environment:
+      <<: *common-env
+    depends_on:
+      - redis
+    volumes:
+      - ./services/api:/app
+      - ./services/telemetry:/app/telemetry
+      - ./services/reporting:/app/reporting
+      - /app/__pycache__/
+    networks:
+      - trackflow-net
+
+  # ── Flower (Celery observability dashboard) ──────────────────────────
+  flower:
+    image: mheitner/flower:2.0
+    container_name: trackflow-flower
+    ports:
+      - "5555:5555"
+    environment:
+      <<: *common-env
+    depends_on:
+      - redis
     networks:
       - trackflow-net
 

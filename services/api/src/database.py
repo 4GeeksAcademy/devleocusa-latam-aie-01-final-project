@@ -123,6 +123,7 @@ def init_db() -> None:
     """
     # The import registers the table models with SQLModel.metadata.
     from src.models.sql_models import (  # noqa: F401
+        DeadLetterRow,
         IncidentTable,
         ProfileTable,
         SupplierTable,

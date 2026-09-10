@@ -17,6 +17,7 @@ from src.routes.auth_router import auth_router
 from src.routes.incidents_fastapi_router import incidents_fastapi_router
 from src.routes.inventory import inventory_router
 from src.routes.profiles_router import profiles_router
+from src.routes.reports_router import router as reports_router
 from src.routes.suppliers_fastapi_router import suppliers_fastapi_router
 from src.routes.users_router import users_router
 from src.telemetry import TelemetryMiddleware
@@ -51,6 +52,7 @@ app.include_router(profiles_router)
 app.include_router(inventory_router)
 app.include_router(suppliers_fastapi_router)
 app.include_router(incidents_fastapi_router)
+app.include_router(reports_router)
 app.include_router(reporting_router)
 
 # Telemetry event ingestion — prefix configurable via TELEMETRY_ENDPOINT
