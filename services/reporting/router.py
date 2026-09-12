@@ -35,6 +35,8 @@ from . import store as reporting_store
 _PIPELINES_DIR = (
     Path(__file__).resolve().parent.parent.parent / "data" / "pipelines"
 )
+if not _PIPELINES_DIR.exists():
+    _PIPELINES_DIR = Path("/app/data/pipelines")
 if str(_PIPELINES_DIR) not in sys.path:
     sys.path.insert(0, str(_PIPELINES_DIR))
 

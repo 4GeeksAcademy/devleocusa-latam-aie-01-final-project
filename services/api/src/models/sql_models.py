@@ -121,4 +121,24 @@ class JobRunTable(SQLModel, table=True):
     started_at: Optional[datetime] = Field(default=None, nullable=True)
     finished_at: Optional[datetime] = Field(default=None, nullable=True)
     error_message: Optional[str] = Field(default=None, nullable=True)
+
+
+# ── Dead Letter Queue SQLModel table ────────────────────────────────────
+
+
+class DeadLetterRow(SQLModel, table=True):
+    """Persistent record of a Celery task that failed after all retries.
+
+    Each row captures the task UUID, how many attempts were made,
+    the final error message, and the timestamp of the failure.
+    The table is populated exclusively by ``src.tasks``.
+    """
+
+    __tablename__ = "dead_letter_queue"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_id: str = Field(nullable=False, index=True)
+    attempt: int = Field(nullable=False)
+    error_message: str = Field(nullable=False)
+    timestamp: datetime = Field(default_factory=_utcnow, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)

@@ -3,6 +3,20 @@
 
 FROM python:3.11-slim
 
+# ── System libraries for WeasyPrint PDF rendering ──────────────────────
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends \
+		fonts-dejavu-core \
+		libffi8 \
+		libglib2.0-0 \
+		libharfbuzz-subset0 \
+		libharfbuzz0b \
+		libjpeg62-turbo \
+		libopenjp2-7 \
+		libpango-1.0-0 \
+		libpangoft2-1.0-0 \
+	&& rm -rf /var/lib/apt/lists/*
+
 # ── Install uv (fast Python package installer) ──────────────────────────
 # Official installation method: pip install uv
 RUN pip install --no-cache-dir uv

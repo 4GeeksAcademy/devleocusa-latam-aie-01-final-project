@@ -5,7 +5,9 @@ description = "TrackFlow backend API"
 requires-python = ">=3.11"
 dependencies = [
   "bcrypt<4.1",
+  "celery[redis]>=5.4.0",
   "fastapi>=0.141.1",
+  "flower>=2.0.0",
   "flask==3.0.3",
   "passlib[bcrypt]>=1.7.4",
   "prefect>=3.8.4",
@@ -14,11 +16,13 @@ dependencies = [
   "pydantic-settings>=2.15.0",
   "python-jose[cryptography]>=3.5.0",
   "python-multipart>=0.0.32",
+  "redis>=5.0.0",
   "sendgrid>=6.12.5",
   "sqlmodel>=0.0.22,<0.0.34",
   "supabase>=2.0.0",
   "tinydb==4.8.0",
   "uvicorn>=0.52.0",
+  "weasyprint>=60.0",
 ]
 
 [project.scripts]
