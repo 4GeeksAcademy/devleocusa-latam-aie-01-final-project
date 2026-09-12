@@ -8,6 +8,7 @@ python-multipart>=0.0.32
 
 # ── Pipeline orchestration (direct import from data/pipelines/) ─────────
 prefect>=3.8.4
+celery[redis]>=5.4.0
 
 # ── Database ────────────────────────────────────────────────────────────
 tinydb==4.8.0
@@ -25,3 +26,4 @@ sendgrid>=6.12.5
 
 # ── Telemetry / Data analysis ──────────────────────────────────────────
 pandas>=2.1.0
+weasyprint>=60.0

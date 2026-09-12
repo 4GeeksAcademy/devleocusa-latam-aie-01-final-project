@@ -341,10 +341,7 @@ def generate_report(
         )
 
         # ── Exponential backoff retry ──────────────────────────────
-        try:
-            self.retry(exc=exc, countdown=2 ** self.request.retries)
-        except self.MaxRetriesExceededError:
-            # ── All retries exhausted → dead-letter queue ──────────
+        if self.request.retries >= self.max_retries:
             _save_to_dead_letter(
                 task_id=task_id,
                 attempt=attempt,
@@ -359,10 +356,6 @@ def generate_report(
                 duration_s=final_duration,
                 error=str(exc),
             )
-            return {
-                "status": "dead_lettered",
-                "report_id": report_id,
-                "report_type": report_type,
-                "error": str(exc),
-                "attempts": attempt,
-            }
+            raise
+
+        self.retry(exc=exc, countdown=2 ** self.request.retries)

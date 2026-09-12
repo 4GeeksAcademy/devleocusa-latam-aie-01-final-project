@@ -20,6 +20,7 @@ services:
       context: ./services
       dockerfile: Dockerfile
     container_name: trackflow-api
+    command: uvicorn src.fastapi_server:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     env_file:
@@ -103,8 +104,9 @@ services:
 
   # ── Flower (Celery observability dashboard) ──────────────────────────
   flower:
-    image: mheitner/flower:2.0
+    image: mher/flower:2.0
     container_name: trackflow-flower
+    command: celery --broker=redis://redis:6379/0 flower --port=5555
     ports:
       - "5555:5555"
     environment:

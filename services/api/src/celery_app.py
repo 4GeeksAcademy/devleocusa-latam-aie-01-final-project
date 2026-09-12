@@ -38,5 +38,6 @@ app.conf.update(
 # ── Auto-discover tasks in sibling packages ────────────────────────────
 # Adjust the list as task modules are added.
 app.autodiscover_tasks([
+    "src",
     "src.services",
 ])
