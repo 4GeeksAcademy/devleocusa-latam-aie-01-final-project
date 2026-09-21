@@ -66,6 +66,60 @@ For TypeScript consistency checks in the shared package, run:
 
 This executes `tsc --noEmit` and validates types without generating build artifacts.
 
+### Modelo de prediccion de ventas de TrackFlow
+
+El modelo utiliza **Random Forest** porque el equipo de Finanzas necesita una
+solucion estable y explicable. Su importancia de variables permite mostrar si
+el pronostico depende principalmente del volumen de envios o del ingreso medio
+por envio. Frente a XGBoost, evita una optimizacion de hiperparametros mas
+compleja que no se justifica con solo 120 observaciones mensuales.
+
+La preparacion respeta estrictamente el tiempo: el modelo se ajusta solo con los
+ocho primeros anos (96 meses) y se evalua con los dos anos mas recientes (24
+meses). El imputador y el escalador tambien se ajustan exclusivamente con el
+periodo de entrenamiento, de modo que ninguna informacion futura interviene en
+el aprendizaje.
+
+Las metricas se interpretan asi:
+
+- **MSE (Error Cuadratico Medio):** promedio de los errores de ingreso al
+	cuadrado. Penaliza especialmente los fallos monetarios grandes, aunque queda
+	expresado en euros cuadrados y puede estar dominado por pocos meses extremos.
+- **PSI (Population Stability Index):** compara la distribucion historica del
+	ingreso de entrenamiento con la distribucion de los pronosticos futuros,
+	usando deciles historicos. Un valor bajo indica estabilidad; como referencia
+	operativa, menos de 0.10 suele ser estable, entre 0.10 y 0.25 requiere
+	seguimiento y por encima de 0.25 sugiere un cambio relevante de poblacion.
+- **Gini normalizado:** mide si el modelo ordena correctamente los meses desde
+	menor hasta mayor ingreso. Un valor cercano a 1 indica buen ranking, 0 indica
+	ausencia de capacidad de ordenacion y un valor negativo indica orden inverso.
+- **K2 de D'Agostino-Pearson:** comprueba si los residuos presentan asimetria o
+	colas incompatibles con una distribucion normal. Se reporta junto con su
+	`p-value`; un valor inferior a 0.05 alerta de errores no normales y de un
+	posible riesgo subestimado en escenarios extremos.
+
+El MSE no basta por si solo: resume el tamano medio del error, pero no detecta
+un cambio estructural entre periodos (PSI), si el modelo prioriza correctamente
+los meses de mayor ingreso (Gini), ni si existen sesgos o colas extremas en los
+errores (K2). Finanzas necesita las cuatro perspectivas para valorar precision,
+estabilidad y riesgo de planificacion.
+
+Resultado de referencia con el dataset actual y 500 arboles:
+
+| Metrica | Resultado | Lectura para Finanzas |
+| --- | ---: | --- |
+| MSE | 10,003,116,724.14 EUR² | Existen errores monetarios relevantes al elevarlos al cuadrado. |
+| PSI | 8.1017 | Hay un cambio muy fuerte respecto al historico de entrenamiento. |
+| Gini normalizado | 0.9470 | El modelo ordena muy bien los meses por nivel de ingreso. |
+| K2 | 12.7028 (`p-value` 0.0017) | Los residuos no parecen normales; las colas requieren cautela. |
+
+Instalacion y ejecucion:
+
+```bash
+python -m pip install pandas scikit-learn scipy
+PYTHONPATH=src python src/model_training.py
+```
+
 ---
 
 ## Milestones (reference)
