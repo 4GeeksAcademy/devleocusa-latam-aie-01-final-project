@@ -131,6 +131,8 @@ def train_sales_model(
         n_estimators=n_estimators,
         random_state=RANDOM_STATE,
         n_jobs=-1,
+        max_depth=8,
+        min_samples_leaf=3,
     )
     model.fit(prepared.X_train, prepared.y_train)
 
