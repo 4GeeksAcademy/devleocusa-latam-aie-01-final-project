@@ -1,0 +1,119 @@
+{
+  "total_queries": 10,
+  "hits": 10,
+  "recall_at_3": 1.0,
+  "threshold": 0.8,
+  "passed": true,
+  "details": [
+    {
+      "id": "q01",
+      "question": "¿Cuál es la ventana estándar para devolver un producto en TrackFlow?",
+      "expected": "trackflow-returns-policy.es.md",
+      "top3_sources": [
+        "trackflow-returns-policy.es.md",
+        "trackflow-carrier-coverage.es.md",
+        "trackflow-returns-policy.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q02",
+      "question": "¿Quién asume el costo del envío de devolución cuando el producto llegó dañado?",
+      "expected": "trackflow-returns-policy.es.md",
+      "top3_sources": [
+        "trackflow-returns-policy.es.md",
+        "trackflow-returns-policy.es.md",
+        "trackflow-carrier-coverage.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q03",
+      "question": "¿Qué transportistas usa TrackFlow en Estados Unidos?",
+      "expected": "trackflow-carrier-coverage.es.md",
+      "top3_sources": [
+        "trackflow-sla-delivery.es.md",
+        "trackflow-sla-delivery.es.md",
+        "trackflow-carrier-coverage.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q04",
+      "question": "¿Cuál es el SLA de entrega estándar dentro del mismo país?",
+      "expected": "trackflow-sla-delivery.es.md",
+      "top3_sources": [
+        "trackflow-sla-delivery.es.md",
+        "trackflow-carrier-coverage.es.md",
+        "trackflow-returns-policy.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q05",
+      "question": "¿Qué pasa si TrackFlow no cumple el 90% de entregas a tiempo durante dos meses?",
+      "expected": "trackflow-sla-delivery.es.md",
+      "top3_sources": [
+        "trackflow-sla-delivery.es.md",
+        "trackflow-returns-policy.es.md",
+        "trackflow-carrier-coverage.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q06",
+      "question": "¿Cuánto cuesta el almacenamiento por metro cúbico en el almacén de Los Ángeles?",
+      "expected": "trackflow-storage-pricing.es.md",
+      "top3_sources": [
+        "trackflow-storage-pricing.es.md",
+        "trackflow-sla-delivery.es.md",
+        "trackflow-returns-policy.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q07",
+      "question": "¿Qué tarifa paga el inventario que lleva más de 180 días sin movimiento?",
+      "expected": "trackflow-storage-pricing.es.md",
+      "top3_sources": [
+        "trackflow-storage-pricing.es.md",
+        "trackflow-carrier-coverage.es.md",
+        "trackflow-returns-policy.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q08",
+      "question": "¿Cómo se selecciona el transportista para cada envío en TrackFlow?",
+      "expected": "trackflow-carrier-coverage.es.md",
+      "top3_sources": [
+        "trackflow-carrier-coverage.es.md",
+        "trackflow-carrier-coverage.es.md",
+        "trackflow-returns-policy.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q09",
+      "question": "¿Cómo funciona el proceso de inspección de un producto devuelto?",
+      "expected": "trackflow-returns-policy.es.md",
+      "top3_sources": [
+        "trackflow-returns-policy.es.md",
+        "trackflow-returns-policy.es.md",
+        "trackflow-returns-policy.es.md"
+      ],
+      "hit": true
+    },
+    {
+      "id": "q10",
+      "question": "¿Qué beneficio tienen los clientes que almacenan más de 50 metros cúbicos?",
+      "expected": "trackflow-storage-pricing.es.md",
+      "top3_sources": [
+        "trackflow-storage-pricing.es.md",
+        "trackflow-sla-delivery.es.md",
+        "trackflow-storage-pricing.es.md"
+      ],
+      "hit": true
+    }
+  ]
+}

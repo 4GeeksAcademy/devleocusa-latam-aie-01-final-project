@@ -23,6 +23,7 @@ from src.routes.users_router import users_router
 from src.telemetry import TelemetryMiddleware
 from telemetry.router import router as telemetry_router
 from reporting.router import router as reporting_router
+from src.routes.knowledge_router import knowledge_router
 
 
 @asynccontextmanager
@@ -54,6 +55,7 @@ app.include_router(suppliers_fastapi_router)
 app.include_router(incidents_fastapi_router)
 app.include_router(reports_router)
 app.include_router(reporting_router)
+app.include_router(knowledge_router)
 
 # Telemetry event ingestion — prefix configurable via TELEMETRY_ENDPOINT
 _telemetry_prefix = os.getenv("TELEMETRY_ENDPOINT", "/telemetry").rstrip("/")
