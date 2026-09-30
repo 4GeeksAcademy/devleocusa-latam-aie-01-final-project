@@ -1,0 +1,62 @@
+[
+  {
+    "id": "q01",
+    "question": "¿Cuál es la ventana estándar para devolver un producto en TrackFlow?",
+    "expected_source_document": "trackflow-returns-policy.es.md",
+    "expected_keywords": ["30 días", "ventana de devolución"]
+  },
+  {
+    "id": "q02",
+    "question": "¿Quién asume el costo del envío de devolución cuando el producto llegó dañado?",
+    "expected_source_document": "trackflow-returns-policy.es.md",
+    "expected_keywords": ["TrackFlow", "error de TrackFlow", "producto dañado"]
+  },
+  {
+    "id": "q03",
+    "question": "¿Qué transportistas usa TrackFlow en Estados Unidos?",
+    "expected_source_document": "trackflow-carrier-coverage.es.md",
+    "expected_keywords": ["UPS", "FedEx", "DHL"]
+  },
+  {
+    "id": "q04",
+    "question": "¿Cuál es el SLA de entrega estándar dentro del mismo país?",
+    "expected_source_document": "trackflow-sla-delivery.es.md",
+    "expected_keywords": ["3 a 5 días hábiles", "estándar"]
+  },
+  {
+    "id": "q05",
+    "question": "¿Qué pasa si TrackFlow no cumple el 90% de entregas a tiempo durante dos meses?",
+    "expected_source_document": "trackflow-sla-delivery.es.md",
+    "expected_keywords": ["compensación", "5%", "90%"]
+  },
+  {
+    "id": "q06",
+    "question": "¿Cuánto cuesta el almacenamiento por metro cúbico en el almacén de Los Ángeles?",
+    "expected_source_document": "trackflow-storage-pricing.es.md",
+    "expected_keywords": ["18 USD", "metro cúbico"]
+  },
+  {
+    "id": "q07",
+    "question": "¿Qué tarifa paga el inventario que lleva más de 180 días sin movimiento?",
+    "expected_source_document": "trackflow-storage-pricing.es.md",
+    "expected_keywords": ["150%", "inventario de larga duración", "día 181"]
+  },
+  {
+    "id": "q08",
+    "question": "¿Cómo se selecciona el transportista para cada envío en TrackFlow?",
+    "expected_source_document": "trackflow-carrier-coverage.es.md",
+    "expected_keywords": ["sistema", "destino", "peso"]
+  },
+  {
+    "id": "q09",
+    "question": "¿Cómo funciona el proceso de inspección de un producto devuelto?",
+    "expected_source_document": "trackflow-returns-policy.es.md",
+    "expected_keywords": ["inspecciona", "clasifica", "reventa", "reacondicionar", "descarte"]
+  },
+  {
+    "id": "q10",
+    "question": "¿Qué beneficio tienen los clientes que almacenan más de 50 metros cúbicos?",
+    "expected_source_document": "trackflow-storage-pricing.es.md",
+    "expected_keywords": ["tarifa preferencial", "Miguel Torres"]
+  }
+]
