@@ -266,6 +266,19 @@ Red interna: `trackflow-net` (bridge). Variables de entorno compartidas vía `x-
 ### Parámetros
 - Dimensión del vector: 1536. Métrica: Cosine. Batch size de inserción: 50 puntos.
 
+### Agente base con LangGraph (2026-10-02)
+- El grafo vive en `services/api/src/agent/`: estado `AgentState` mínimo (`question`, `context`, `answer`, `error`); nodos separados para validar la pregunta, recuperar, generar, abstenerse y manejar pregunta inválida.
+- `build_agent_graph()` define rutas condicionales: pregunta inválida evita retrieval; contexto vacío omite generación. Compila durante startup de FastAPI.
+- `retrieve()` y `generate_answer(question, context)` se reutilizan a través de `rag_adapter.py`; `query()` monolítico no se invoca. `embed()` sigue siendo reutilizado internamente por el `retrieve()` existente.
+- El saver `AsyncPostgresSaver` usa `SQL_URL`; `agent_graph_runtime()` hace `setup()` al iniciar y el endpoint asigna un `run_id` interno como `thread_id`. El 2026-10-02 se verificaron conexión a PostgreSQL, ejecución del grafo y lectura de snapshots reales.
+- `POST /knowledge/query` mantiene `question`, retorna `answer` y `run_id`; los errores HTTP no exponen excepciones ni contenido arbitrario del campo `error` interno.
+- `invoke_agent()` captura outputs ordenados de nodos; `trace_store.py` los guarda como JSONL en `services/api/data/agent_traces.jsonl` por defecto o en `AGENT_TRACE_PATH`. Los traces contienen pregunta, contexto recuperado y respuesta; protegerlos como datos sensibles.
+- LangSmith se habilita con `LANGSMITH_API_KEY`; no había clave configurada en el entorno durante la verificación.
+- Export de evidencia: `outputs/langgraph-agent-trace-validation.jsonl`. Usa el documento de devoluciones real, saver PostgreSQL real y cinco snapshots, pero retrieval/generación deterministas simulados porque Qdrant no respondió. No cuenta como consulta RAG live.
+- Tres evals offline leen fixtures en `tests/pipelines/fixtures/agent_traces.json`; incluyen abstención, orden de nodos y una respuesta fixture anclada a `trackflow-returns-policy.es.md` (`30 días`). No sustituyen una evaluación sobre traces live.
+- Estado de validación (2026-10-02): los tres evals pasaron; API + pipelines dieron 246 pasados antes del cambio del harness Prefect; tras cambiar a un harness por módulo, los 34 tests de `test_pipeline.py` pasan con `UserWarning` convertido en error. Recall@3 offline existente pasó 10/10.
+- Pendiente técnico: LangGraph detecta edges a nodos inexistentes al compilar, pero no detecta nodos desconectados; `TypedDict` describe el estado sin validación de tipos en runtime. Qdrant y LangSmith no se validaron en vivo en este entorno.
+
 ---
 
 ## Pipelines de Datos
