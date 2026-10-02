@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.database import init_db
 from src.env_loader import load_env_if_available
+from src.agent.runtime import agent_graph_runtime
 from src.routes.auth_router import auth_router
 from src.routes.incidents_fastapi_router import incidents_fastapi_router
 from src.routes.inventory import inventory_router
@@ -31,7 +32,9 @@ async def lifespan(_app: FastAPI):
     """Create SQLModel tables in Supabase on startup."""
     load_env_if_available()
     init_db()
-    yield
+    async with agent_graph_runtime() as agent_graph:
+        _app.state.agent_graph = agent_graph
+        yield
 
 
 app = FastAPI(title="TrackFlow Auth API", lifespan=lifespan)

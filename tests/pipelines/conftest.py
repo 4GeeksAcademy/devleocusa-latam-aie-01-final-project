@@ -10,10 +10,14 @@ but ``get_run_logger`` may still fail in some edge cases).
 """
 
 import logging
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+# Pipeline unit tests deliberately run tasks without a Prefect flow context.
+os.environ.setdefault("PREFECT_LOGGING_TO_API_WHEN_MISSING_FLOW", "ignore")
 
 # ────────────────────────────────────────────────────────────────────
 # Path setup

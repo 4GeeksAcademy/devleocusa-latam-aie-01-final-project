@@ -43,15 +43,20 @@ from pipeline import (
 # ====================================================================
 
 
+@pytest.fixture(scope="module", autouse=True)
+def pipeline_harness():
+    with prefect_test_harness():
+        yield
+
+
 def _run_in_harness(task_callable, *args, **kwargs):
-    """Wrap a Prefect task call inside a test harness context.
+    """Run a Prefect task inside the module-scoped test harness.
 
     Calls the task *directly* (not ``.fn``) so that Prefect 3 properly
     creates a task run context — required by ``get_run_logger()`` and
     other orchestration features inside the task body.
     """
-    with prefect_test_harness():
-        return task_callable(*args, **kwargs)
+    return task_callable(*args, **kwargs)
 
 
 # ====================================================================
