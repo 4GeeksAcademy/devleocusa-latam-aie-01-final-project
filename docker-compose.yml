@@ -28,6 +28,7 @@ services:
       - .env
     environment:
       <<: *common-env
+      TRACKFLOW_API_BASE_URL: "http://127.0.0.1:8000"
     volumes:
       # Bind-mount source code for hot-reload (--reload in uvicorn)
       - ./services/api:/app
