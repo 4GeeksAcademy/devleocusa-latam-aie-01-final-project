@@ -14,7 +14,9 @@ pyproject.toml
 ./src/agent/graph.py
 ./src/agent/invocation.py
 ./src/agent/nodes.py
+./src/agent/operational_tools.py
 ./src/agent/rag_adapter.py
+./src/agent/routing.py
 ./src/agent/runtime.py
 ./src/agent/state.py
 ./src/agent/trace_store.py
@@ -67,7 +69,9 @@ src/agent/__init__.py
 src/agent/graph.py
 src/agent/invocation.py
 src/agent/nodes.py
+src/agent/operational_tools.py
 src/agent/rag_adapter.py
+src/agent/routing.py
 src/agent/runtime.py
 src/agent/state.py
 src/agent/trace_store.py
@@ -107,6 +111,7 @@ src/services/security.py
 src/services/user_service.py
 tests/test_agent_graph.py
 tests/test_agent_invocation.py
+tests/test_agent_tools.py
 tests/test_auth.py
 tests/test_carriers.py
 tests/test_inventory.py

@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from src.agent.invocation import invoke_agent
+from src.models.user import User
+from src.services.auth_service import get_current_user, oauth2_scheme
 
 knowledge_router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 logger = logging.getLogger(__name__)
@@ -55,6 +57,8 @@ class KnowledgeQueryResponse(BaseModel):
 async def knowledge_query(
     payload: KnowledgeQueryRequest,
     request: Request,
+    authorization: str = Depends(oauth2_scheme),
+    _current_user: User = Depends(get_current_user),
 ) -> KnowledgeQueryResponse:
     """POST /knowledge/query — Query the TrackFlow knowledge base.
 
@@ -66,6 +70,7 @@ async def knowledge_query(
             request.app.state.agent_graph,
             payload.question,
             run_id,
+            authorization=authorization,
         )
     except Exception:
         logger.exception("Falló la corrida del agente run_id=%s", run_id)
