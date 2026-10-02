@@ -7,10 +7,16 @@ against the TrackFlow knowledge base.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import logging
+from uuid import uuid4
+
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from src.agent.invocation import invoke_agent
+
 knowledge_router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+logger = logging.getLogger(__name__)
 
 
 # ── Request / Response schemas ─────────────────────────────────────────
@@ -32,6 +38,7 @@ class KnowledgeQueryResponse(BaseModel):
         ...,
         description="Respuesta generada por el modelo a partir del contexto recuperado",
     )
+    run_id: str = Field(..., description="Identificador para consultar el trace de esta corrida")
 
 
 # ── Endpoint ───────────────────────────────────────────────────────────
@@ -45,27 +52,34 @@ class KnowledgeQueryResponse(BaseModel):
         "generada por IA a partir de la base de conocimiento indexada."
     ),
 )
-async def knowledge_query(payload: KnowledgeQueryRequest) -> KnowledgeQueryResponse:
+async def knowledge_query(
+    payload: KnowledgeQueryRequest,
+    request: Request,
+) -> KnowledgeQueryResponse:
     """POST /knowledge/query — Query the TrackFlow knowledge base.
 
-    This endpoint imports and calls query() from the RAG pipeline.
-    No retrieval or generation logic is duplicated here.
+    The endpoint invokes the compiled agent graph and returns its run ID.
     """
+    run_id = str(uuid4())
     try:
-        # Import here to avoid circular imports and to allow lazy loading
-        from src.pipelines.rag import query as rag_query
-
-        answer = rag_query(payload.question)
-        return KnowledgeQueryResponse(answer=answer)
-
-    except ImportError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"El módulo RAG no está disponible: {e}",
+        result = await invoke_agent(
+            request.app.state.agent_graph,
+            payload.question,
+            run_id,
         )
-    except Exception as e:
-        # Log the full error server-side; return a safe message to the client
+    except Exception:
+        logger.exception("Falló la corrida del agente run_id=%s", run_id)
         raise HTTPException(
             status_code=500,
-            detail=f"Error al procesar la consulta: {type(e).__name__}",
+            detail=f"No se pudo procesar la consulta. Identificador: {run_id}",
+        ) from None
+
+    if result.get("error"):
+        raise HTTPException(status_code=422, detail="La pregunta no es válida.")
+    if not result.get("answer"):
+        raise HTTPException(
+            status_code=500,
+            detail=f"El agente no produjo una respuesta. Identificador: {run_id}",
         )
+
+    return KnowledgeQueryResponse(answer=result["answer"], run_id=run_id)

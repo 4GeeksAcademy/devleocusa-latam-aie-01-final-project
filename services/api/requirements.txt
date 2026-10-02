@@ -9,6 +9,13 @@ python-multipart>=0.0.32
 # ── Pipeline orchestration (direct import from data/pipelines/) ─────────
 prefect>=3.8.4
 celery[redis]>=5.4.0
+langgraph>=1.2.12
+langgraph-checkpoint-postgres>=3.1.2
+langsmith>=0.14.2
+psycopg[binary,pool]>=3.3.6
+openai>=1.0.0
+qdrant-client>=1.19.1
+python-dotenv>=1.2.3
 
 # ── Database ────────────────────────────────────────────────────────────
 tinydb==4.8.0

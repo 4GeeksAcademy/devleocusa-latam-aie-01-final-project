@@ -1,0 +1,35 @@
+from __future__ import annotations
+
+import os
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+from src.agent.graph import build_agent_graph
+
+
+def _checkpoint_connection_string() -> str:
+    connection_string = os.getenv("SQL_URL", "").strip()
+    if not connection_string:
+        raise RuntimeError("La variable SQL_URL es obligatoria para el checkpoint del agente.")
+    return (
+        connection_string.replace("postgresql+psycopg2://", "postgresql://", 1)
+        .replace("postgresql+psycopg://", "postgresql://", 1)
+    )
+
+
+def _configure_langsmith() -> None:
+    if os.getenv("LANGSMITH_API_KEY"):
+        os.environ.setdefault("LANGSMITH_TRACING", "true")
+        os.environ.setdefault("LANGSMITH_PROJECT", "trackflow-agent")
+
+
+@asynccontextmanager
+async def agent_graph_runtime() -> AsyncIterator[object]:
+    _configure_langsmith()
+    async with AsyncPostgresSaver.from_conn_string(
+        _checkpoint_connection_string()
+    ) as checkpointer:
+        await checkpointer.setup()
+        yield build_agent_graph(checkpointer=checkpointer)

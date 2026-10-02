@@ -1,0 +1,66 @@
+[
+  {
+    "run_id": "eval-empty-question",
+    "question": "",
+    "events": [
+      {
+        "node": "validate_question",
+        "output": {
+          "error": "La pregunta no puede estar vacía.",
+          "answer": "La pregunta no puede estar vacía."
+        }
+      },
+      {
+        "node": "invalid_question",
+        "output": {
+          "error": "La pregunta no puede estar vacía.",
+          "answer": "La pregunta no puede estar vacía."
+        }
+      }
+    ],
+    "answer": "La pregunta no puede estar vacía."
+  },
+  {
+    "run_id": "eval-no-context",
+    "question": "¿Cuál es la política sobre artículos no documentados?",
+    "events": [
+      {
+        "node": "validate_question",
+        "output": {"question": "¿Cuál es la política sobre artículos no documentados?", "error": ""}
+      },
+      {"node": "retrieve", "output": {"context": []}},
+      {
+        "node": "no_context",
+        "output": {"answer": "No encontré información relevante en la base de conocimiento de TrackFlow."}
+      }
+    ],
+    "answer": "No encontré información relevante en la base de conocimiento de TrackFlow."
+  },
+  {
+    "run_id": "eval-returns-policy",
+    "question": "¿Cuál es la ventana estándar de devolución?",
+    "events": [
+      {
+        "node": "validate_question",
+        "output": {"question": "¿Cuál es la ventana estándar de devolución?", "error": ""}
+      },
+      {
+        "node": "retrieve",
+        "output": {
+          "context": [
+            {
+              "text": "Ventana de devolución estándar: 30 días desde la entrega.",
+              "source_document": "trackflow-returns-policy.es.md",
+              "_score": 0.91
+            }
+          ]
+        }
+      },
+      {
+        "node": "generate_answer",
+        "output": {"answer": "La ventana estándar es de 30 días desde la entrega."}
+      }
+    ],
+    "answer": "La ventana estándar es de 30 días desde la entrega."
+  }
+]
