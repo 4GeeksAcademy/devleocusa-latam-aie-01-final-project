@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -135,7 +136,7 @@ def test_incident_route_skips_rag_and_generates_from_tool_result() -> None:
             sources=["incidents"], incident={"ticket_id": "ticket-42"}
         ),
         retrieve_fn=lambda _question: calls.append("rag") or [],
-            incident_lookup_fn=lambda query, _authorization: calls.append(query.ticket_id)
+            incident_lookup_fn=lambda query: calls.append(query.ticket_id)
             or IncidentLookupResult(
                 status=ToolStatus.SUCCESS,
                 incidents=[
@@ -155,7 +156,7 @@ def test_incident_route_skips_rag_and_generates_from_tool_result() -> None:
         generate_fn=lambda _question, evidence: evidence[0]["text"],
     )
 
-    result = graph.invoke({"question": "¿En qué estado está el ticket ticket-42?"})
+    result = asyncio.run(graph.ainvoke({"question": "¿En qué estado está el ticket ticket-42?"}))
 
     assert '"status": "open"' in result["answer"]
     assert calls == ["ticket-42"]
@@ -166,14 +167,14 @@ def test_operational_failure_returns_honest_fallback() -> None:
         classify_fn=lambda _question: RoutingDecision(
             sources=["incidents"], incident={"ticket_id": "ticket-42"}
         ),
-            incident_lookup_fn=lambda _query, _authorization: IncidentLookupResult(
+            incident_lookup_fn=lambda _query: IncidentLookupResult(
                 status=ToolStatus.UNAVAILABLE,
                 incidents=[],
                 message="timeout",
             ),
     )
 
-    result = graph.invoke({"question": "¿En qué estado está el ticket ticket-42?"})
+    result = asyncio.run(graph.ainvoke({"question": "¿En qué estado está el ticket ticket-42?"}))
 
     assert result["answer"] == "No puedo confirmar el estado de ese ticket ahora mismo."
 
@@ -186,7 +187,7 @@ def test_mixed_question_uses_rag_then_incident_tool() -> None:
         ),
         retrieve_fn=lambda _question: calls.append("rag")
         or [{"source": "rag", "text": "SLA: 48 horas"}],
-        incident_lookup_fn=lambda _query, _authorization: calls.append("incidents")
+        incident_lookup_fn=lambda _query: calls.append("incidents")
             or IncidentLookupResult(
                 status=ToolStatus.SUCCESS,
                 incidents=[
@@ -206,7 +207,7 @@ def test_mixed_question_uses_rag_then_incident_tool() -> None:
         generate_fn=lambda _question, evidence: " | ".join(row["source"] for row in evidence),
     )
 
-    result = graph.invoke({"question": "¿Estado del ticket y cuál es el SLA?"})
+    result = asyncio.run(graph.ainvoke({"question": "¿Estado del ticket y cuál es el SLA?"}))
 
     assert result["answer"] == "rag | incidents"
     assert calls == ["rag", "incidents"]
@@ -219,7 +220,7 @@ def test_inventory_route_skips_rag() -> None:
             sources=["inventory"], inventory={"product_query": "CBL-001"}
         ),
         retrieve_fn=lambda _question: calls.append("rag") or [],
-            inventory_lookup_fn=lambda query, _authorization: calls.append(query.product_query)
+            inventory_lookup_fn=lambda query: calls.append(query.product_query)
             or InventoryLookupResult(
                 status=ToolStatus.SUCCESS,
                 products=[
@@ -235,7 +236,7 @@ def test_inventory_route_skips_rag() -> None:
         generate_fn=lambda _question, evidence: evidence[0]["text"],
     )
 
-    result = graph.invoke({"question": "¿Hay stock del SKU CBL-001?"})
+    result = asyncio.run(graph.ainvoke({"question": "¿Hay stock del SKU CBL-001?"}))
 
     assert '"current_stock": 12' in result["answer"]
     assert calls == ["CBL-001"]
@@ -246,13 +247,13 @@ def test_inventory_failure_returns_honest_fallback() -> None:
         classify_fn=lambda _question: RoutingDecision(
             sources=["inventory"], inventory={"product_query": "CBL-001"}
         ),
-        inventory_lookup_fn=lambda _query, _authorization: {
+        inventory_lookup_fn=lambda _query: {
             "status": "unavailable",
             "products": [],
             "message": "timeout",
         },
     )
 
-    result = graph.invoke({"question": "¿Hay stock del SKU CBL-001?"})
+    result = asyncio.run(graph.ainvoke({"question": "¿Hay stock del SKU CBL-001?"}))
 
     assert result["answer"] == "No puedo confirmar el stock de ese producto ahora mismo."

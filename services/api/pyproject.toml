@@ -32,6 +32,7 @@ dependencies = [
   "qdrant-client>=1.19.1",
   "python-dotenv>=1.2.3",
   "pandas>=2.1.0",
+  "langchain-mcp-adapters>=0.3.2",
 ]
 
 [project.scripts]

@@ -24,7 +24,6 @@ def test_invocation_persists_ordered_node_outputs(monkeypatch, tmp_path) -> None
             graph,
             "¿Cuál es la ventana?",
             "test-run-1",
-            authorization="test-token",
         )
     )
 
@@ -45,7 +44,7 @@ def test_trace_records_tool_route_without_credentials_or_ticket_payload(monkeypa
         classify_fn=lambda _question: RoutingDecision(
             sources=["incidents"], incident={"ticket_id": "ticket-42"}
         ),
-        incident_lookup_fn=lambda _query, _authorization: IncidentLookupResult(
+        incident_lookup_fn=lambda _query: IncidentLookupResult(
             status=ToolStatus.SUCCESS,
             incidents=[
                 IncidentRecord.model_validate(
@@ -69,7 +68,6 @@ def test_trace_records_tool_route_without_credentials_or_ticket_payload(monkeypa
             graph,
             "¿Estado del ticket ticket-42?",
             "private-run",
-            authorization="secret-bearer-token",
         )
     )
 
@@ -82,5 +80,4 @@ def test_trace_records_tool_route_without_credentials_or_ticket_payload(monkeypa
         "generate_answer",
     ]
     assert trace["events"][2]["output"] == {"status": "success", "record_count": 1}
-    assert "secret-bearer-token" not in trace_text
     assert "private title" not in trace_text

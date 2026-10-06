@@ -41,7 +41,6 @@ def test_knowledge_endpoint_invokes_graph_and_returns_trace_id(
         knowledge_query(
             KnowledgeQueryRequest(question="¿Cuál es la ventana?"),
             _request_for(graph),
-            authorization=auth_token,
             _current_user=test_user[0],
         )
     )
@@ -74,7 +73,6 @@ def test_knowledge_endpoint_hides_node_exception(
             knowledge_query(
                 KnowledgeQueryRequest(question="¿Cuál es la ventana?"),
                 _request_for(graph),
-                authorization=auth_token,
                 _current_user=test_user[0],
             )
         )
@@ -92,7 +90,7 @@ def test_knowledge_endpoint_hides_node_exception(
 
 
 def test_knowledge_endpoint_does_not_expose_graph_error(monkeypatch, auth_token) -> None:
-    async def agent_with_internal_error(_graph, _question, _run_id, *, authorization):
+    async def agent_with_internal_error(_graph, _question, _run_id):
         return {"error": "SQL_URL=private-database-credentials", "answer": ""}
 
     monkeypatch.setattr(

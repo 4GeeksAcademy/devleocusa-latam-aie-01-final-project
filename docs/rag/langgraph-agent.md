@@ -2,20 +2,17 @@
 
 El endpoint autenticado `POST /knowledge/query` ejecuta el grafo compilado durante el startup de FastAPI. Un clasificador LLM devuelve una decisión tipada para consultar RAG, incidencias, inventario o una combinación. Las fuentes se ejecutan secuencialmente en este orden: RAG, incidencias, inventario; el grafo combina la evidencia disponible para generar la respuesta. No conserva historial de conversación.
 
-## Tools operativas
+## Tools operativas vía MCP
 
-Las tools consultan por HTTP las APIs de este mismo servicio; no indexan ni simulan datos operativos. `lookup_incidents` solo hace `GET /api/incidents/{id}` o `GET /api/incidents` con filtros. Estas rutas requieren JWT. `lookup_inventory` solo hace `GET /inventory/products`; la ruta GET de inventario actualmente no exige autenticación, aunque se propaga el bearer recibido por el agente. El stock procede del balance calculado por el API SQLModel.
+Las consultas operativas se cargan por discovery desde el servidor MCP independiente, usando `langchain-mcp-adapters` y Streamable HTTP. El agente ya no llama directamente a `/api/incidents` ni a `/inventory/products`. Las operaciones expuestas, schemas y scopes están documentados en [mcps/README.md](../../mcps/README.md).
 
-`POST /knowledge/query` exige un bearer JWT válido. El token se pasa al grafo únicamente como contexto efímero y no forma parte del estado, checkpoints ni trazas locales. El timeout de cada llamada HTTP operativa es de 4 segundos; timeout, caída, respuesta inválida o falta de coincidencia generan un fallback explícito y nunca un estado/stock supuesto. En preguntas mixtas, un fallo operativo no impide contestar con evidencia RAG disponible y se informa del fallo.
+El cliente del agente usa OAuth client credentials y pide un token con `trackflow:mcp incidents:read inventory:read`. Las credenciales OAuth se mantienen en la configuración del servicio API, fuera del estado de LangGraph, checkpoints y traces. El MCP valida bearer, issuer, audience y scopes con `mcpauth`; a su vez usa una cuenta técnica TrackFlow separada para las rutas de incidencias que exigen el JWT local. No se reenvía el token del usuario de `POST /knowledge/query`.
 
-Configuración no secreta:
+El MCP consulta las APIs existentes, no accede directamente a TinyDB ni a Supabase. La búsqueda de inventario usa el `current_stock` calculado por el API SQLModel. Actualizar el estado de una incidencia usa únicamente `PATCH /api/incidents/{id}/status`. Inventario es read-only y la tool deny-only `request_inventory_change` responde `READ_ONLY` sin efectos.
 
-```env
-TRACKFLOW_API_BASE_URL=http://127.0.0.1:8000
-AGENT_ROUTER_MODEL=gpt-4o-mini
-```
+Las llamadas MCP fallidas generan fallbacks honestos del agente. En preguntas mixtas, un fallo operativo no impide contestar con evidencia RAG disponible. Las trazas locales conservan el estado/conteo de resultados, no payloads de herramientas ni credenciales.
 
-En Docker Compose el API usa `http://127.0.0.1:8000` para llamar a sus propias rutas. El clasificador reutiliza `GENERATION_MODEL_ID`, `GENERATION_API_KEY` y `GENERATION_BASE_URL` del pipeline RAG (con fallback a `OPENAI_API_KEY` y endpoint OpenAI estándar); si no hay modelo configurado, usa `gpt-4o-mini`. `TRACKFLOW_API_BASE_URL` puede cambiarse cuando el API se despliegue detrás de otra URL.
+Configuración local: seguir los pasos de [mcps/README.md](../../mcps/README.md), incluyendo `MCP_SERVER_URL`, `MCP_OAUTH_TOKEN_URL`, `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET` y `MCP_OAUTH_SCOPES`. El clasificador reutiliza `GENERATION_MODEL_ID`, `GENERATION_API_KEY` y `GENERATION_BASE_URL` del pipeline RAG (con fallback a `OPENAI_API_KEY` y endpoint OpenAI estándar); si no hay modelo configurado, usa `gpt-4o-mini`.
 
 ## Checkpoints y trazas
 

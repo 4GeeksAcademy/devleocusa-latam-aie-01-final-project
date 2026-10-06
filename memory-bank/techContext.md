@@ -327,3 +327,34 @@ Red interna: `trackflow-net` (bridge). Variables de entorno compartidas vía `x-
 6. **Reutilización de lógica**: pipelines compartidos entre reporting y data/pipelines, utilidades TypeScript en `/src/` montadas en contenedor.
 7. **Consistencia binacional**: reglas nucleares parametrizadas por país, configuración centralizada.
 8. **Monorepo con hot-reload**: bind-mounts de código fuente en Docker para desarrollo iterativo rápido.
+
+---
+
+## Servidor MCP de herramientas corporativas (2026-10-06)
+
+### Arquitectura y runtime
+- El servicio vive en `mcps/` y ejecuta FastMCP por Streamable HTTP en `/mcp` (puerto 8001). `mcpauth` se integra como resource server; no se usan helpers OAuth de FastMCP.
+- `/.well-known/oauth-protected-resource` es metadata pública del protocolo; MCP exige bearer JWT válido antes de `tools/list` y `tools/call`. Keycloak 26.3 es issuer local de desarrollo en Compose, con estado persistido en `trackflow_keycloak_data`.
+- El cliente `trackflow-agent` usa client credentials y scopes mínimos. El cliente público `trackflow-mcp-playground` usa authorization code + PKCE S256.
+- Configuración principal: `MCP_PUBLIC_URL`, `MCP_AUDIENCE=trackflow-mcp`, `OAUTH_ISSUER_URL`, `OAUTH_JWKS_URI`, `MCP_OAUTH_TOKEN_URL`, `MCP_OAUTH_CLIENT_ID`, `MCP_OAUTH_CLIENT_SECRET`, `MCP_OAUTH_SCOPES`, `TRACKFLOW_SERVICE_USERNAME`, `TRACKFLOW_SERVICE_PASSWORD`. Valores secretos viven solo en `.env` ignorado.
+
+### Scopes y tokens OIDC
+- Scope base MCP: `trackflow:mcp`. Scopes por tool: `incidents:read`, `incidents:create`, `incidents:status:write`, `inventory:read`.
+- Clientes interactivos de Keycloak deben solicitar `openid` además de los scopes anteriores; `mcpauth` requiere `sub` en el access token.
+- Keycloak 26 no creó automáticamente el client scope `basic` ni su mapper subject en este realm. Por eso el cliente `trackflow-mcp-playground` tiene el mapper `oidc-sub-mapper` configurado con `access.token.claim=true`. El mapper también está declarado en `mcps/keycloak/realm.json` para nuevos imports.
+- `offline_access` no se requiere para probar; desactivar “Request refresh token” en Inspector evita refreshes tras cerrar la sesión SSO. Al cambiar mappers/scopes, borrar OAuth state y autorizar de nuevo.
+- La integración de diagnóstico `verify_access_token` usa el verificador JWKS de `mcpauth`; ante rechazo solo registra tipo de excepción, algoritmo, `kid`, nombres de claims y campos faltantes. Nunca registrar bearer ni valores de claims.
+
+### Contratos MCP
+- Incidencias llaman la API FastAPI activa, usando una cuenta técnica TrackFlow normal para sus rutas con JWT local. La cuenta fue creada por `POST /users`; los nombres/email y password no deben escribirse en Memory Bank.
+- Crear usa `POST /api/incidents`; consultar usa `GET /api/incidents/{id}` o filtros; cambio de estado usa únicamente `PATCH /api/incidents/{id}/status`.
+- Inventario usa `GET /inventory/products` y filtra los `SKURead` live (`id`, `name`, `sku_code`, `warehouse`, `current_stock`). Ninguna tool de escritura llama endpoints; `request_inventory_change` responde `READ_ONLY` explícitamente.
+- FastMCP puede entregar el resultado a `langchain-mcp-adapters` como bloque JSON de texto; `services/api/src/agent/mcp_tools.py` soporta tanto ese formato como `structuredContent`.
+- Auditoría de `tools/call` registra cliente, tool y resultado. El logger `trackflow_mcp.tools` debe mantenerse en nivel INFO para emitir esas entradas en runtime.
+
+### LangGraph y validación
+- `agent_graph_runtime()` carga las tools MCP al startup. Los nodos operativos son async; se mantiene el orden RAG → incidencias → inventario y los fallbacks previos. No queda camino HTTP directo del agente a los endpoints operativos.
+- El checkpointer se conecta con `psycopg.AsyncConnection.connect(..., prepare_threshold=None)` porque el saver predeterminado preparaba cada statement y causaba colisión `DuplicatePreparedStatement` en el pool PostgreSQL.
+- Validación del 2026-10-06: `uv run --project mcps pytest -q mcps/tests` (9 pasaron); suite API/pipelines (262 pasaron, 2 omitidos); Compose válido y API/MCP/Keycloak healthy.
+- Flujos reales observados: OAuth code exchange 200; tools/list descubre seis tools; consulta de inventario sin coincidencias devuelve lista vacía; escritura denegada; create/get/status lifecycle de incidencia vía MCP confirmado.
+- El endpoint MCP y Keycloak necesitan puertos públicos temporales de Codespaces para clientes externos; el Inspector y el API deben permanecer privados. Cerrar los puertos públicos después del ejercicio.

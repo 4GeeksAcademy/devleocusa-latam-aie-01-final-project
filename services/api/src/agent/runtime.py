@@ -5,8 +5,11 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg import AsyncConnection
+from psycopg.rows import dict_row
 
 from src.agent.graph import build_agent_graph
+from src.agent.mcp_tools import AgentMCPTools
 
 
 def _checkpoint_connection_string() -> str:
@@ -28,8 +31,21 @@ def _configure_langsmith() -> None:
 @asynccontextmanager
 async def agent_graph_runtime() -> AsyncIterator[object]:
     _configure_langsmith()
-    async with AsyncPostgresSaver.from_conn_string(
-        _checkpoint_connection_string()
-    ) as checkpointer:
+    async with await AsyncConnection.connect(
+        _checkpoint_connection_string(),
+        autocommit=True,
+        prepare_threshold=None,
+        row_factory=dict_row,
+    ) as connection:
+        checkpointer = AsyncPostgresSaver(connection)
         await checkpointer.setup()
-        yield build_agent_graph(checkpointer=checkpointer)
+        mcp_tools = AgentMCPTools()
+        await mcp_tools.start()
+        try:
+            yield build_agent_graph(
+                checkpointer=checkpointer,
+                incident_lookup_fn=mcp_tools.lookup_incidents,
+                inventory_lookup_fn=mcp_tools.lookup_inventory,
+            )
+        finally:
+            await mcp_tools.aclose()
