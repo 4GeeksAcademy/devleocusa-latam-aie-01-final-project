@@ -1,0 +1,125 @@
+{
+  "realm": "trackflow",
+  "enabled": true,
+  "displayName": "TrackFlow Development",
+  "clients": [
+    {
+      "clientId": "trackflow-agent",
+      "name": "TrackFlow LangGraph Agent",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "defaultClientScopes": [
+        "trackflow:mcp",
+        "trackflow-audience"
+      ],
+      "optionalClientScopes": [
+        "incidents:read",
+        "incidents:create",
+        "incidents:status:write",
+        "inventory:read"
+      ]
+    },
+    {
+      "clientId": "trackflow-mcp-playground",
+      "name": "TrackFlow MCP Playground",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "defaultClientScopes": [
+        "trackflow:mcp",
+        "trackflow-audience"
+      ],
+      "optionalClientScopes": [
+        "incidents:read",
+        "incidents:create",
+        "incidents:status:write",
+        "inventory:read"
+      ],
+      "protocolMappers": [
+        {
+          "name": "Subject (sub)",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "trackflow:mcp",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "incidents:read",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Read TrackFlow incident tickets"
+      }
+    },
+    {
+      "name": "incidents:create",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Create TrackFlow incident tickets"
+      }
+    },
+    {
+      "name": "incidents:status:write",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Change TrackFlow incident ticket status"
+      }
+    },
+    {
+      "name": "inventory:read",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "Read TrackFlow inventory"
+      }
+    },
+    {
+      "name": "trackflow-audience",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "TrackFlow MCP audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "trackflow-mcp",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}

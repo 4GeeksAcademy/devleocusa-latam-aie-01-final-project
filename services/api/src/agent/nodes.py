@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+import inspect
 import json
 from typing import Any
 
 from src.agent import rag_adapter
-from src.agent import operational_tools, routing as routing_adapter
+from src.agent import routing as routing_adapter
 from src.agent.operational_tools import IncidentLookupResult, InventoryLookupResult
 from src.agent.state import (
     AgentState,
@@ -18,8 +19,12 @@ RetrieveFn = Callable[[str], list[dict[str, Any]]]
 GenerateAnswerFn = Callable[[str, list[dict[str, Any]]], str]
 NoContextMessageFn = Callable[[], str]
 ClassifyFn = Callable[[str], RoutingDecision]
-IncidentLookupFn = Callable[[IncidentLookupInput, str], IncidentLookupResult]
-InventoryLookupFn = Callable[[InventoryLookupInput, str], InventoryLookupResult]
+IncidentLookupFn = Callable[
+    [IncidentLookupInput], IncidentLookupResult | Awaitable[IncidentLookupResult]
+]
+InventoryLookupFn = Callable[
+    [InventoryLookupInput], InventoryLookupResult | Awaitable[InventoryLookupResult]
+]
 
 INCIDENT_FALLBACK = "No puedo confirmar el estado de ese ticket ahora mismo."
 INVENTORY_FALLBACK = "No puedo confirmar el stock de ese producto ahora mismo."
@@ -71,16 +76,18 @@ def classify_question(
     }
 
 
-def lookup_incidents(
+async def lookup_incidents(
     state: AgentState,
     *,
     lookup_fn: IncidentLookupFn | None = None,
-    authorization: str = "",
 ) -> dict[str, Any]:
-    lookup_fn = lookup_fn or operational_tools.lookup_incidents
     try:
+        if lookup_fn is None:
+            raise RuntimeError("MCP incident tools are not configured.")
         query = IncidentLookupInput.model_validate(state.get("incident_query", {}))
-        result = lookup_fn(query, authorization)
+        result = lookup_fn(query)
+        if inspect.isawaitable(result):
+            result = await result
         result = result.model_dump(mode="json")
     except Exception:
         result = {"status": "unavailable", "incidents": [], "message": "service_error"}
@@ -90,16 +97,18 @@ def lookup_incidents(
     }
 
 
-def lookup_inventory(
+async def lookup_inventory(
     state: AgentState,
     *,
     lookup_fn: InventoryLookupFn | None = None,
-    authorization: str = "",
 ) -> dict[str, Any]:
-    lookup_fn = lookup_fn or operational_tools.lookup_inventory
     try:
+        if lookup_fn is None:
+            raise RuntimeError("MCP inventory tools are not configured.")
         query = InventoryLookupInput(product_query=state.get("inventory_query", ""))
-        result = lookup_fn(query, authorization)
+        result = lookup_fn(query)
+        if inspect.isawaitable(result):
+            result = await result
         result = result.model_dump(mode="json")
     except Exception:
         result = {"status": "unavailable", "products": [], "message": "service_error"}

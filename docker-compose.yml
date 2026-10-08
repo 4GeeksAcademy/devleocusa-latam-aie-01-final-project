@@ -29,6 +29,14 @@ services:
     environment:
       <<: *common-env
       TRACKFLOW_API_BASE_URL: "http://127.0.0.1:8000"
+      MCP_SERVER_URL: "http://mcp:8001/mcp"
+      MCP_OAUTH_TOKEN_URL: "${MCP_OAUTH_TOKEN_URL:-http://keycloak:8080/realms/trackflow/protocol/openid-connect/token}"
+      MCP_OAUTH_CLIENT_ID: "${MCP_OAUTH_CLIENT_ID:-trackflow-agent}"
+      MCP_OAUTH_CLIENT_SECRET: "${MCP_OAUTH_CLIENT_SECRET:-}"
+      MCP_OAUTH_SCOPES: "${MCP_OAUTH_SCOPES:-trackflow:mcp incidents:read inventory:read}"
+    depends_on:
+      mcp:
+        condition: service_healthy
     volumes:
       # Bind-mount source code for hot-reload (--reload in uvicorn)
       - ./services/api:/app
@@ -38,6 +46,66 @@ services:
       # Anonymous volume: prevents local node_modules (if any) from
       # shadowing the container-installed Python packages
       - /app/__pycache__/
+    networks:
+      - trackflow-net
+
+  # ── OAuth-protected MCP company tools ─────────────────────────────────
+  mcp:
+    build:
+      context: .
+      dockerfile: mcps/Dockerfile
+    container_name: trackflow-mcp
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8001"
+      MCP_PUBLIC_URL: "${MCP_PUBLIC_URL:-http://localhost:8001}"
+      MCP_AUDIENCE: "trackflow-mcp"
+      OAUTH_ISSUER_URL: "${OAUTH_ISSUER_URL:-http://localhost:8080/realms/trackflow}"
+      OAUTH_JWKS_URI: "${OAUTH_JWKS_URI:-http://keycloak:8080/realms/trackflow/protocol/openid-connect/certs}"
+      TRACKFLOW_API_BASE_URL: "http://api:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/.well-known/oauth-protected-resource', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    networks:
+      - trackflow-net
+
+  # ── Local OAuth 2.1 / OIDC issuer for MCP development ────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    container_name: trackflow-keycloak
+    command: start-dev --import-realm --http-enabled=true
+    ports:
+      - "8080:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME:-admin}"
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD in the root .env}"
+      KC_HOSTNAME: "${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}"
+      KC_HOSTNAME_STRICT: "false"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "exec 3<>/dev/tcp/127.0.0.1/8080"
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./mcps/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
     networks:
       - trackflow-net
 
@@ -137,4 +205,6 @@ networks:
     driver: bridge
 
 volumes:
+  keycloak_data:
+    name: trackflow_keycloak_data
   qdrant_data:

@@ -46,10 +46,6 @@ class RoutingDecision(BaseModel):
         return self
 
 
-class AgentContext(TypedDict, total=False):
-    authorization: str
-
-
 class AgentState(TypedDict, total=False):
     question: str
     context: list[dict[str, Any]]

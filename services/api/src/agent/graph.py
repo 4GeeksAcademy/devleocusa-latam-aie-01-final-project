@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.runtime import Runtime
 
 from src.agent.nodes import (
     ClassifyFn,
@@ -23,7 +22,7 @@ from src.agent.nodes import (
     route_after_validation,
     validate_question,
 )
-from src.agent.state import AgentContext, AgentState
+from src.agent.state import AgentState
 
 
 def build_agent_graph(
@@ -36,7 +35,7 @@ def build_agent_graph(
     incident_lookup_fn: IncidentLookupFn | None = None,
     inventory_lookup_fn: InventoryLookupFn | None = None,
 ):
-    builder = StateGraph(AgentState, context_schema=AgentContext)
+    builder = StateGraph(AgentState)
     builder.add_node("validate_question", validate_question)
     builder.add_node(
         "invalid_question",
@@ -50,22 +49,14 @@ def build_agent_graph(
         "classify",
         lambda state: classify_question(state, classify_fn=classify_fn),
     )
-    builder.add_node(
-        "incident_tool",
-        lambda state, runtime: lookup_incidents(
-            state,
-            lookup_fn=incident_lookup_fn,
-            authorization=(runtime.context or {}).get("authorization", ""),
-        ),
-    )
-    builder.add_node(
-        "inventory_tool",
-        lambda state, runtime: lookup_inventory(
-            state,
-            lookup_fn=inventory_lookup_fn,
-            authorization=(runtime.context or {}).get("authorization", ""),
-        ),
-    )
+    async def incident_tool_node(state: AgentState) -> dict:
+        return await lookup_incidents(state, lookup_fn=incident_lookup_fn)
+
+    async def inventory_tool_node(state: AgentState) -> dict:
+        return await lookup_inventory(state, lookup_fn=inventory_lookup_fn)
+
+    builder.add_node("incident_tool", incident_tool_node)
+    builder.add_node("inventory_tool", inventory_tool_node)
     builder.add_node(
         "generate_answer",
         lambda state: generate_response(state, generate_fn=generate_fn),

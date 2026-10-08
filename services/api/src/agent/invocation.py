@@ -9,8 +9,6 @@ async def invoke_agent(
     graph: Any,
     question: str,
     run_id: str,
-    *,
-    authorization: str,
 ) -> dict[str, Any]:
     config = {
         "configurable": {"thread_id": run_id},
@@ -24,7 +22,6 @@ async def invoke_agent(
         async for update in graph.astream(
             {"question": question},
             config=config,
-            context={"authorization": authorization},
             stream_mode="updates",
         ):
             for node_name, output in update.items():
