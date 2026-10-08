@@ -1,6 +1,6 @@
 # Agente RAG con LangGraph
 
-El endpoint autenticado `POST /knowledge/query` ejecuta el grafo compilado durante el startup de FastAPI. Un clasificador LLM devuelve una decisión tipada para consultar RAG, incidencias, inventario o una combinación. Las fuentes se ejecutan secuencialmente en este orden: RAG, incidencias, inventario; el grafo combina la evidencia disponible para generar la respuesta. No conserva historial de conversación.
+El endpoint autenticado `POST /knowledge/query` ejecuta el grafo compilado durante el startup de FastAPI. Un clasificador LLM devuelve una decisión tipada para consultar RAG, incidencias, inventario o una combinación. Las fuentes se ejecutan secuencialmente en este orden: RAG, incidencias, inventario; el grafo combina la evidencia disponible para generar la respuesta. La memoria episódica por usuario está en tablas PostgreSQL separadas, con una propuesta pendiente de consentimiento explícito y auditoría; no se escribe en Qdrant ni en el knowledge base. Diseño, restricciones y retención: [agent-memory-design.md](../agent-memory-design.md).
 
 ## Tools operativas vía MCP
 

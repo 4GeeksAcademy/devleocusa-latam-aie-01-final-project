@@ -1,5 +1,10 @@
 # Technical Context
 
+## Política de memoria del agente
+- Seguir `MEMORY-trackflow.es.md` (no la allowlist provisional del briefing): reglas de carrier corregidas; contexto de incidencias con patrón repetible; preferencias de reportes para clientes B2B recurrentes.
+- No persistir direcciones ni ubicaciones sensibles B2B/B2C, rutas internas de almacén, incidencias puntuales sin patrón ni información de negociación comercial activa.
+- Memoria episódica privada en PostgreSQL, separada de RAG/Qdrant y nunca fuente autoritativa de políticas; requiere consentimiento explícito. Propuesta 7d, memoria 180d, máximo 20 activas por usuario.
+
 ## Visión General
 
 TrackFlow es una plataforma logística B2B para e-commerce mediano (moda, electrónica, cosmética) que opera binacionalmente entre **Los Ángeles (EE.UU.)** y **Zaragoza (España)**. El proyecto cubre tres líneas de servicio: almacenes, última milla y logística inversa. El sistema se construyó como **monorepo** para centralizar aplicaciones, servicios, datos y automatizaciones bajo un único repositorio versionado.
@@ -278,6 +283,16 @@ Red interna: `trackflow-net` (bridge). Variables de entorno compartidas vía `x-
 - Tres evals offline leen fixtures en `tests/pipelines/fixtures/agent_traces.json`; incluyen abstención, orden de nodos y una respuesta fixture anclada a `trackflow-returns-policy.es.md` (`30 días`). No sustituyen una evaluación sobre traces live.
 - Estado de validación (2026-10-02): los tres evals pasaron; API + pipelines dieron 246 pasados antes del cambio del harness Prefect; tras cambiar a un harness por módulo, los 34 tests de `test_pipeline.py` pasan con `UserWarning` convertido en error. Recall@3 offline existente pasó 10/10.
 - Pendiente técnico: LangGraph detecta edges a nodos inexistentes al compilar, pero no detecta nodos desconectados; `TypedDict` describe el estado sin validación de tipos en runtime. Qdrant y LangSmith no se validaron en vivo en este entorno.
+
+### Memoria episódica del agente (2026-10-08)
+- Política de `MEMORY-trackflow.es.md`: correcciones de carrier consolidadas carrier+país/zona, contexto de incidencias recurrentes y preferencias de informes mensuales B2B.
+- Nunca recordar ubicaciones sensibles B2B/B2C, rutas internas de almacén, incidentes aislados de paquete ni negociaciones comerciales activas. `CONTEXT-company.md` no existe en el workspace auditado; `MEMORY-trackflow.es.md` es la fuente explícita de guardrails disponible.
+- PostgreSQL separado en `agent_memory_proposals`, `agent_approved_memories` y `agent_memory_decisions`; no usa Qdrant/RAG ni checkpoints como almacén. Interfaz explícita `PostgresAgentMemoryStore`. La elección evita infraestructura vectorial para un máximo de 20 recuerdos pequeños por usuario y facilita claves únicas, TTL y auditoría.
+- El turno del agente presenta la propuesta y solicita consentimiento en la misma conversación. La decisión se clasifica estructuradamente frente a la propuesta activa; `explicit_confirmation` debe ser verdadero para aprobar. Ambigüedad, error del clasificador, edición no re-aprobada y silencio al expirar no autorizan escritura (rechazo por defecto).
+- Índice único parcial para una propuesta pendiente por usuario; consolidación por clave canónica; TTL 7/180 días; límite 20 recuerdos activos. Expiraciones y resultados de decisiones dejan auditoría; no se conserva el texto original libre de respuesta en los campos de decisión.
+- `docs/agent-memory-design.md` incluye ejemplos memorables/no memorables y ciclos de aceptación. El 2026-10-08 se ejecutó el store contra Supabase en un esquema aislado/transacción revertida: ciclo aprobado creó y recuperó la memoria más su auditoría; ciclo rechazado conservó la memoria anterior sin añadir otra y registró `rejected`. Sin datos persistentes de prueba.
+- La prueba ejercitó `setup`, DDL/índices y APIs de store con decisión ya determinada; no llamó al clasificador LLM ni al flujo HTTP completo. Aún faltan integración del clasificador, migración sobre esquema legado poblado, concurrencia real y expiración/limpieza.
+- Validación de código registrada: 240 pruebas API, `compileall` y `git diff --check` pasaron.
 
 ---
 

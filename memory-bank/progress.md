@@ -1,6 +1,14 @@
 # Progress
 Integración de MCP con su OAUTH terminada y testeada.
 
+## Memoria de agente (2026-10-08)
+- La elección relacional se justifica por el tamaño pequeño, los datos estructurados, el aislamiento por usuario, la consolidación por claves estables y la auditoría/expiración; existe interfaz explícita `PostgresAgentMemoryStore`.
+- Generación de propuesta y pregunta de consentimiento en la misma conversación. El clasificador estructurado requiere confirmación explícita; ambigüedad, error y silencio al vencimiento no aprueban y se resuelven como rechazo. Índice único parcial limita a una propuesta pendiente por usuario.
+- TTL de propuesta 7 días, memoria 180 días y máximo 20 recuerdos activos por usuario. Consolidación por clave lógica y limpieza de expirados conservando eventos de auditoría.
+- `docs/agent-memory-design.md` documenta categorías admitidas/prohibidas, ejemplos positivos/negativos y los ciclos aprobado/rechazado. El 2026-10-08 ambos ciclos del store se probaron contra Supabase en esquema aislado dentro de transacción revertida: aprobación creó y recuperó memoria con auditoría; rechazo no creó memoria y dejó evento `rejected`.
+- Revisión checklist: `CONTEXT-company.md` no existe en el workspace inspeccionado; las restricciones explícitas se tomaron de `MEMORY-trackflow.es.md`. La memoria es contexto no autoritativo y las reglas operativas se verifican con RAG/MCP.
+- Validación: suite API 240/240; `compileall` y `git diff --check` pasaron. Supabase live verificó creación de esquema/tablas/índices y ciclos de persistencia del store, sin dejar datos. Sigue pendiente probar clasificación LLM + endpoint completo, migración desde esquema legado poblado, concurrencia y limpieza de expirados.
+
 ## Estado por hito
 - Hito 7: RAG completado.
 - Base agéntica: grafo, checkpoints PostgreSQL, trazas locales y endpoint integrados.

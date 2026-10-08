@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, Field, model_validator
+from src.agent.memory_models import MemoryProposal
 
 from src.models.incident import IncidentBranch, IncidentCategory, IncidentOrigin, IncidentStatus
 
@@ -46,6 +47,11 @@ class RoutingDecision(BaseModel):
         return self
 
 
+class MemoryGeneration(BaseModel):
+    answer: str
+    proposal: MemoryProposal | None = None
+
+
 class AgentState(TypedDict, total=False):
     question: str
     context: list[dict[str, Any]]
@@ -58,3 +64,7 @@ class AgentState(TypedDict, total=False):
     route_error: str
     answer: str
     error: str
+    memories: list[str]
+    memory_proposal: dict[str, str] | None
+    user_id: str
+    pending_proposal: dict[str, Any] | None
