@@ -12,8 +12,10 @@ from src.agent.state import (
     AgentState,
     IncidentLookupInput,
     InventoryLookupInput,
+    MemoryGeneration,
     RoutingDecision,
 )
+from src.agent.memory_generation import generate_answer_and_proposal
 
 RetrieveFn = Callable[[str], list[dict[str, Any]]]
 GenerateAnswerFn = Callable[[str, list[dict[str, Any]]], str]
@@ -122,7 +124,7 @@ def generate_response(
     state: AgentState,
     *,
     generate_fn: GenerateAnswerFn | None = None,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     evidence = list(state.get("context", []))
     incident_result = state.get("incident_result")
     inventory_result = state.get("inventory_result")
@@ -144,9 +146,23 @@ def generate_response(
     if not evidence:
         return respond_without_context(state)
 
-    generate_fn = generate_fn or rag_adapter.generate_answer
-    answer = generate_fn(state["question"], evidence)
-    return {"answer": answer}
+    if generate_fn is not None:
+        return {"answer": generate_fn(state["question"], evidence), "memory_proposal": None}
+    try:
+        result = generate_answer_and_proposal(
+            state["question"], evidence, state.get("memories", [])
+        )
+    except Exception:
+        # Preserve response availability if structured self-evaluation fails.
+        return {"answer": rag_adapter.generate_answer(state["question"], evidence), "memory_proposal": None}
+    answer = result.answer
+    proposal = result.proposal
+    if proposal:
+        answer = f"{answer}\n\n¿Quieres que recuerde esto para la próxima vez: “{proposal.content}”?"
+    return {
+        "answer": answer,
+        "memory_proposal": proposal.model_dump() if proposal else None,
+    }
 
 
 def respond_without_context(

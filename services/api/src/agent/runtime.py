@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 
 from src.agent.graph import build_agent_graph
 from src.agent.mcp_tools import AgentMCPTools
+from src.agent.memory_store import PostgresAgentMemoryStore
 
 
 def _checkpoint_connection_string() -> str:
@@ -39,13 +40,17 @@ async def agent_graph_runtime() -> AsyncIterator[object]:
     ) as connection:
         checkpointer = AsyncPostgresSaver(connection)
         await checkpointer.setup()
+        memory_store = await PostgresAgentMemoryStore.connect()
         mcp_tools = AgentMCPTools()
         await mcp_tools.start()
         try:
-            yield build_agent_graph(
+            graph = build_agent_graph(
                 checkpointer=checkpointer,
                 incident_lookup_fn=mcp_tools.lookup_incidents,
                 inventory_lookup_fn=mcp_tools.lookup_inventory,
             )
+            graph.memory_store = memory_store
+            yield graph
         finally:
             await mcp_tools.aclose()
+            await memory_store.aclose()

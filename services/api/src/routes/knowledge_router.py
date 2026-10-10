@@ -65,11 +65,13 @@ async def knowledge_query(
     """
     run_id = str(uuid4())
     try:
-        result = await invoke_agent(
-            request.app.state.agent_graph,
-            payload.question,
-            run_id,
-        )
+        graph = request.app.state.agent_graph
+        if hasattr(graph, "memory_store"):
+            result = await invoke_agent(
+                graph, payload.question, run_id, str(_current_user.id)
+            )
+        else:
+            result = await invoke_agent(graph, payload.question, run_id)
     except Exception:
         logger.exception("Falló la corrida del agente run_id=%s", run_id)
         raise HTTPException(
