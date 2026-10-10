@@ -90,7 +90,7 @@ def test_knowledge_endpoint_hides_node_exception(
 
 
 def test_knowledge_endpoint_does_not_expose_graph_error(monkeypatch, auth_token) -> None:
-    async def agent_with_internal_error(_graph, _question, _run_id):
+    async def agent_with_internal_error(_graph, _question, _run_id, _user_id=None):
         return {"error": "SQL_URL=private-database-credentials", "answer": ""}
 
     monkeypatch.setattr(
@@ -123,3 +123,47 @@ def test_knowledge_endpoint_rejects_requests_without_bearer_token() -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_guardrail_summary_is_authenticated_and_scoped_to_current_user(
+    monkeypatch, auth_token, test_user
+) -> None:
+    captured = {}
+
+    def fake_summary(user_id, *, since=None, until=None):
+        captured.update(user_id=user_id, since=since, until=until)
+        return {
+            "total": 2,
+            "by_category": {"security": 1, "scope": 1},
+            "by_action": {"refuse": 1, "redirect": 1},
+            "by_reason": {"instruction_override": 1, "general_casual_question": 1},
+        }
+
+    monkeypatch.setattr(
+        "src.routes.knowledge_router.summarize_guardrail_events", fake_summary
+    )
+    client = _client_for(object())
+    headers = {"Authorization": f"Bearer {auth_token}"}
+
+    response = client.get(
+        "/knowledge/guardrails/summary",
+        params={"since": "2026-10-01T00:00:00Z", "until": "2026-10-10T00:00:00Z"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["by_category"] == {"security": 1, "scope": 1}
+    assert captured["user_id"] == str(test_user[0].id)
+    assert captured["since"].utcoffset().total_seconds() == 0
+    assert "¿Qué hora es en Tokio?" not in response.text
+    assert "Ignora tus instrucciones" not in response.text
+
+
+def test_guardrail_summary_rejects_naive_timestamps(auth_token) -> None:
+    response = _client_for(object()).get(
+        "/knowledge/guardrails/summary",
+        params={"since": "2026-10-01T00:00:00"},
+        headers={"Authorization": f"Bearer {auth_token}"},
+    )
+
+    assert response.status_code == 422
