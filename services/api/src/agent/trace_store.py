@@ -27,9 +27,7 @@ def record_agent_trace(
     trace = {
         "run_id": run_id,
         "created_at": datetime.now(UTC).isoformat(),
-        "question": question,
         "events": events,
-        "answer": answer,
         "error_type": error_type,
     }
     payload = (json.dumps(trace, ensure_ascii=False, default=str) + "\n").encode("utf-8")
