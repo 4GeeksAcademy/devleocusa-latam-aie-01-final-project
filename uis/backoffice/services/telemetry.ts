@@ -41,9 +41,9 @@ const QUEUE_BATCH_SIZE = 20;
 const QUEUE_FLUSH_INTERVAL_MS = 10_000;
 const MAX_RETRIES = 3;
 
-let queue: TelemetryEvent[] = [];
+const queue: TelemetryEvent[] = [];
 let timerId: ReturnType<typeof setInterval> | null = null;
-let sessionId = generateSessionId();
+const sessionId = generateSessionId();
 let requestCounter = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────────────

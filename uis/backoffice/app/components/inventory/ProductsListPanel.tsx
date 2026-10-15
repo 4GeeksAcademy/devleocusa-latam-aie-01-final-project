@@ -76,8 +76,6 @@ export function ProductsListPanel() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const loadProducts = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
       const data = await listProducts();
       setProducts(data);
@@ -93,7 +91,11 @@ export function ProductsListPanel() {
   }, []);
 
   useEffect(() => {
-    loadProducts();
+    // queueMicrotask deja explícita la frontera asíncrona para el linter
+    // (react-hooks/set-state-in-effect); el spinner inicial ya es `loading`.
+    queueMicrotask(() => {
+      void loadProducts();
+    });
   }, [loadProducts]);
 
   // Filtro por nombre o código SKU — memoizado para no recalcular en cada render
@@ -142,7 +144,11 @@ export function ProductsListPanel() {
         <Alert variant="error">{error}</Alert>
         <button
           type="button"
-          onClick={loadProducts}
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            void loadProducts();
+          }}
           className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
         >
           Reintentar
