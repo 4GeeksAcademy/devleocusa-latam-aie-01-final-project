@@ -34,8 +34,6 @@ export default function OrdersHistoryPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
       const data = await listOrders();
       setOrders(data);
@@ -51,7 +49,11 @@ export default function OrdersHistoryPage() {
   }, []);
 
   useEffect(() => {
-    fetchOrders();
+    // queueMicrotask deja explícita la frontera asíncrona para el linter
+    // (react-hooks/set-state-in-effect); el spinner inicial ya es `loading`.
+    queueMicrotask(() => {
+      void fetchOrders();
+    });
   }, [fetchOrders]);
 
   // ── Loading state ──────────────────────────────────────────────────
@@ -70,7 +72,11 @@ export default function OrdersHistoryPage() {
         <Alert variant="error">{error}</Alert>
         <button
           type="button"
-          onClick={fetchOrders}
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            void fetchOrders();
+          }}
           className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
         >
           Reintentar

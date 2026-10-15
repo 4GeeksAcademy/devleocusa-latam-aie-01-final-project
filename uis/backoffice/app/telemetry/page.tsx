@@ -121,9 +121,6 @@ export default function TelemetryPage() {
 
     let cancelled = false;
 
-    setLoading(true);
-    setError(null);
-
     fetch(`${apiBase}/telemetry/report`)
       .then<ReportData>((res) => {
         if (!res.ok) {

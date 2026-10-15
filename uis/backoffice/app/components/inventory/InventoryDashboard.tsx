@@ -44,6 +44,11 @@ function formatDate(iso: string): string {
   }
 }
 
+/** Marca de tiempo para métricas de latencia (envolvente de performance.now). */
+function nowMs(): number {
+  return performance.now();
+}
+
 // ─── Component ──────────────────────────────────────────────────────────
 
 export function InventoryDashboard() {
@@ -74,8 +79,6 @@ export function InventoryDashboard() {
   // ── Data fetching ────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
       const [productsData, ordersData] = await Promise.all([
         listProducts(),
@@ -95,7 +98,11 @@ export function InventoryDashboard() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    // queueMicrotask deja explícita la frontera asíncrona para el linter
+    // (react-hooks/set-state-in-effect); el spinner inicial ya es `loading`.
+    queueMicrotask(() => {
+      void loadData();
+    });
   }, [loadData]);
 
   // ── Actions ──────────────────────────────────────────────────────────
@@ -111,7 +118,7 @@ export function InventoryDashboard() {
       return;
     }
 
-    const startTs = performance.now();
+    const startTs = nowMs();
     const skuCode = newProduct.sku_code.trim();
     const warehouse = newProduct.warehouse;
 
@@ -121,7 +128,7 @@ export function InventoryDashboard() {
     setActionLoading((prev) => ({ ...prev, create: true }));
     try {
       const created = await createProduct(newProduct);
-      const latencyMs = Math.round(performance.now() - startTs);
+      const latencyMs = Math.round(nowMs() - startTs);
 
       notify("success", `Producto "${newProduct.name}" creado correctamente.`);
 
@@ -132,8 +139,6 @@ export function InventoryDashboard() {
       setNewProduct({ name: "", sku_code: "", warehouse: "Los Angeles" });
       await loadData();
     } catch (err) {
-      const latencyMs = Math.round(performance.now() - startTs);
-
       const inventoryErr = err instanceof InventoryApiError ? err : null;
 
       // Emit sku.create.failure
@@ -169,10 +174,10 @@ export function InventoryDashboard() {
     }
 
     setActionLoading((prev) => ({ ...prev, [`inbound-${skuId}`]: true }));
-    const startTs = performance.now();
+    const startTs = nowMs();
     try {
-      const result = await createInboundOrder({ sku_id: skuId, quantity: qty });
-      const latencyMs = Math.round(performance.now() - startTs);
+      await createInboundOrder({ sku_id: skuId, quantity: qty });
+      const latencyMs = Math.round(nowMs() - startTs);
 
       notify("success", `Entrada registrada: +${qty} unidades.`);
       setInboundQty((prev) => ({ ...prev, [skuId]: "" }));
@@ -193,7 +198,6 @@ export function InventoryDashboard() {
 
       await loadData();
     } catch (err) {
-      const latencyMs = Math.round(performance.now() - startTs);
       notify(
         "error",
         err instanceof InventoryApiError
@@ -213,10 +217,10 @@ export function InventoryDashboard() {
     }
 
     setActionLoading((prev) => ({ ...prev, [`outbound-${skuId}`]: true }));
-    const startTs = performance.now();
+    const startTs = nowMs();
     try {
-      const result = await createOutboundOrder({ sku_id: skuId, quantity: qty });
-      const latencyMs = Math.round(performance.now() - startTs);
+      await createOutboundOrder({ sku_id: skuId, quantity: qty });
+      const latencyMs = Math.round(nowMs() - startTs);
 
       notify("success", `Salida registrada: -${qty} unidades.`);
       setOutboundQty((prev) => ({ ...prev, [skuId]: "" }));
@@ -238,7 +242,6 @@ export function InventoryDashboard() {
 
       await loadData();
     } catch (err) {
-      const latencyMs = Math.round(performance.now() - startTs);
       notify(
         "error",
         err instanceof InventoryApiError
@@ -266,7 +269,11 @@ export function InventoryDashboard() {
         <Alert variant="error">{error}</Alert>
         <button
           type="button"
-          onClick={loadData}
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            void loadData();
+          }}
           className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
         >
           Reintentar

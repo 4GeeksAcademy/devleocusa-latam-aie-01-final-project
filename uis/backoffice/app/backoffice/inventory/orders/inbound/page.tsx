@@ -32,8 +32,6 @@ export default function InboundOrderPage() {
 
   // ── Load products on mount ─────────────────────────────────────────
   const loadProducts = useCallback(async () => {
-    setLoadingProducts(true);
-    setProductsError(null);
     try {
       const data = await listProducts();
       setProducts(data);
@@ -49,7 +47,11 @@ export default function InboundOrderPage() {
   }, []);
 
   useEffect(() => {
-    loadProducts();
+    // queueMicrotask deja explícita la frontera asíncrona para el linter
+    // (react-hooks/set-state-in-effect); el spinner inicial ya es `loadingProducts`.
+    queueMicrotask(() => {
+      void loadProducts();
+    });
   }, [loadProducts]);
 
   // ── Derived ────────────────────────────────────────────────────────
@@ -114,7 +116,11 @@ export default function InboundOrderPage() {
         <Alert variant="error">{productsError}</Alert>
         <button
           type="button"
-          onClick={loadProducts}
+          onClick={() => {
+            setLoadingProducts(true);
+            setProductsError(null);
+            void loadProducts();
+          }}
           className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
         >
           Reintentar

@@ -64,34 +64,6 @@ function getUserAgent(): string {
   return ua.replace(/(\d+\.\d+)(\.\d+)+/g, '$1').slice(0, 120);
 }
 
-// ─── Session / user helpers ─────────────────────────────────────────────
-
-const AUTH_TOKEN_STORAGE_KEY = 'trackflow_token';
-
-function getSessionId(): string {
-  if (typeof window === 'undefined') return '';
-  try {
-    const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-    if (!token) return '';
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.jti || payload.sub || '';
-  } catch {
-    return '';
-  }
-}
-
-function getUserId(): string {
-  if (typeof window === 'undefined') return '';
-  try {
-    const token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-    if (!token) return '';
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.sub || '';
-  } catch {
-    return '';
-  }
-}
-
 // ─── Global error capture ───────────────────────────────────────────────
 
 /** Installs window.onerror globally (synchronous errors). */

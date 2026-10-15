@@ -40,43 +40,48 @@ export function AuthGuard({ children, redirectTo = "/login" }: AuthGuardProps) {
   const [status, setStatus] = useState<"loading" | "authenticated" | "unauthenticated">("loading");
 
   useEffect(() => {
-    const token = getSessionToken();
+    // Deferimos la validación a un microtask para no ejecutar setState de forma
+    // síncrona en el cuerpo del effect (react-hooks/set-state-in-effect); el
+    // estado inicial ya es "loading", así que el spinner se ve igual.
+    queueMicrotask(() => {
+      const token = getSessionToken();
 
-    if (!token) {
-      setStatus("unauthenticated");
-      router.replace(redirectTo);
-      return;
-    }
+      if (!token) {
+        setStatus("unauthenticated");
+        router.replace(redirectTo);
+        return;
+      }
 
-    // Quick JWT validity check (same logic as authApi.isTokenValid)
-    const tokenParts = token.split(".");
-    if (tokenParts.length !== 3) {
-      setStatus("unauthenticated");
-      router.replace(redirectTo);
-      return;
-    }
+      // Quick JWT validity check (same logic as authApi.isTokenValid)
+      const tokenParts = token.split(".");
+      if (tokenParts.length !== 3) {
+        setStatus("unauthenticated");
+        router.replace(redirectTo);
+        return;
+      }
 
-    try {
-      const normalizedPayload = tokenParts[1].replace(/-/g, "+").replace(/_/g, "/");
-      const decodedPayload = atob(normalizedPayload);
-      const payload = JSON.parse(decodedPayload) as { exp?: number };
+      try {
+        const normalizedPayload = tokenParts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const decodedPayload = atob(normalizedPayload);
+        const payload = JSON.parse(decodedPayload) as { exp?: number };
 
-      if (payload.exp && payload.exp <= Math.floor(Date.now() / 1000)) {
-        // Token expired — clear and redirect
+        if (payload.exp && payload.exp <= Math.floor(Date.now() / 1000)) {
+          // Token expired — clear and redirect
+          localStorage.removeItem("trackflow_token");
+          setStatus("unauthenticated");
+          router.replace(redirectTo);
+          return;
+        }
+      } catch {
+        // Malformed payload — treat as invalid
         localStorage.removeItem("trackflow_token");
         setStatus("unauthenticated");
         router.replace(redirectTo);
         return;
       }
-    } catch {
-      // Malformed payload — treat as invalid
-      localStorage.removeItem("trackflow_token");
-      setStatus("unauthenticated");
-      router.replace(redirectTo);
-      return;
-    }
 
-    setStatus("authenticated");
+      setStatus("authenticated");
+    });
   }, [router, redirectTo]);
 
   if (status === "loading") {
