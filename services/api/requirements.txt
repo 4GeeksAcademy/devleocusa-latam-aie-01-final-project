@@ -36,3 +36,7 @@ sendgrid>=6.12.5
 # ── Telemetry / Data analysis ──────────────────────────────────────────
 pandas>=2.1.0
 weasyprint>=60.0
+
+# ── RFP intake pipeline (data/pipelines/src/rfp_intake) ──────────────
+markitdown[pdf]>=0.1.8
+py-readability-metrics>=1.4.5

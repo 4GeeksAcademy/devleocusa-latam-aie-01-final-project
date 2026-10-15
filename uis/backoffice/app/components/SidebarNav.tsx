@@ -22,6 +22,7 @@ const navItems: NavItem[] = [
   { href: "/operaciones/proveedores", label: "Directorio de proveedores" },
   { href: "/operaciones/incidencias", label: "Gestion de incidencias" },
   { href: "/knowledge", label: "📚 Base de Conocimiento" },
+  { href: "/rfp", label: "📥 Recepción de RFPs" },
   { href: "/telemetry", label: "📡 Radar de Telemetría" },
 ];
 
