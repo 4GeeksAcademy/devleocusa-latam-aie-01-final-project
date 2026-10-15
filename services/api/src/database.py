@@ -134,6 +134,11 @@ def init_db() -> None:
         SKUEntry,
         SKUExit,
     )
+    from src.models.rfp import (  # noqa: F401
+        DepartmentSection,
+        RFPDocument,
+        RFPTicket,
+    )
 
     SQLModel.metadata.create_all(get_engine())
 

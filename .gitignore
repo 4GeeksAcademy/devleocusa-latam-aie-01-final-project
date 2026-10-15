@@ -24,3 +24,9 @@ node_modules/
 *.sqlite
 *.sqlite3
 tmp/
+
+# ── RFP intake artifacts (salidas regenerables del pipeline) ──────────
+data/raw/*/
+!data/raw/README.md
+!data/raw/README.es.md
+!data/raw/trackflow_sales.csv

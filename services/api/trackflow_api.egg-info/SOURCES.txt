@@ -5,6 +5,7 @@ pyproject.toml
 ./src/database.py
 ./src/env_loader.py
 ./src/fastapi_server.py
+./src/pipeline_adapter.py
 ./src/seed.py
 ./src/seed_inventory.py
 ./src/server.py
@@ -13,6 +14,10 @@ pyproject.toml
 ./src/agent/__init__.py
 ./src/agent/graph.py
 ./src/agent/invocation.py
+./src/agent/mcp_tools.py
+./src/agent/memory_generation.py
+./src/agent/memory_models.py
+./src/agent/memory_store.py
 ./src/agent/nodes.py
 ./src/agent/operational_tools.py
 ./src/agent/rag_adapter.py
@@ -30,6 +35,7 @@ pyproject.toml
 ./src/models/inventory.py
 ./src/models/models.py
 ./src/models/profile.py
+./src/models/rfp.py
 ./src/models/schemas.py
 ./src/models/sql_models.py
 ./src/models/supplier.py
@@ -41,6 +47,7 @@ pyproject.toml
 ./src/routes/knowledge_router.py
 ./src/routes/profiles_router.py
 ./src/routes/reports_router.py
+./src/routes/rfp_router.py
 ./src/routes/suppliers_fastapi_router.py
 ./src/routes/suppliers_routes.py
 ./src/routes/users_router.py
@@ -52,6 +59,7 @@ pyproject.toml
 ./src/services/job_runner.py
 ./src/services/password_reset_service.py
 ./src/services/profile_service.py
+./src/services/rfp_service.py
 ./src/services/security.py
 ./src/services/user_service.py
 src/__init__.py
@@ -111,6 +119,8 @@ src/services/security.py
 src/services/user_service.py
 tests/test_agent_graph.py
 tests/test_agent_invocation.py
+tests/test_agent_mcp_auth.py
+tests/test_agent_memory.py
 tests/test_agent_tools.py
 tests/test_auth.py
 tests/test_carriers.py
