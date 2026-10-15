@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.agent.nodes import (
     ClassifyFn,
+    CasualAnswerFn,
     GenerateAnswerFn,
     IncidentLookupFn,
     InventoryLookupFn,
@@ -12,6 +13,7 @@ from src.agent.nodes import (
     RetrieveFn,
     classify_question,
     generate_response,
+    guard_user_input,
     lookup_incidents,
     lookup_inventory,
     respond_to_route_failure,
@@ -19,8 +21,10 @@ from src.agent.nodes import (
     retrieve_context,
     route_after_classification,
     route_after_source,
+    route_after_input_guard,
     route_after_validation,
     validate_question,
+    validate_response_output,
 )
 from src.agent.state import AgentState
 
@@ -34,9 +38,16 @@ def build_agent_graph(
     classify_fn: ClassifyFn | None = None,
     incident_lookup_fn: IncidentLookupFn | None = None,
     inventory_lookup_fn: InventoryLookupFn | None = None,
+    casual_fn: CasualAnswerFn | None = None,
 ):
     builder = StateGraph(AgentState)
     builder.add_node("validate_question", validate_question)
+    builder.add_node(
+        "guard_user_input",
+        lambda state: guard_user_input(state, casual_fn=casual_fn),
+    )
+    builder.add_node("guardrail_response", lambda _state: {})
+    builder.add_node("validate_response_output", validate_response_output)
     builder.add_node(
         "invalid_question",
         lambda state: {"error": state["error"], "answer": state["answer"]},
@@ -47,7 +58,9 @@ def build_agent_graph(
     )
     builder.add_node(
         "classify",
-        lambda state: classify_question(state, classify_fn=classify_fn),
+        lambda state: classify_question(
+            state, classify_fn=classify_fn, casual_fn=casual_fn
+        ),
     )
     async def incident_tool_node(state: AgentState) -> dict:
         return await lookup_incidents(state, lookup_fn=incident_lookup_fn)
@@ -74,7 +87,12 @@ def build_agent_graph(
     builder.add_conditional_edges(
         "validate_question",
         route_after_validation,
-        {"classify": "classify", "invalid_question": "invalid_question"},
+        {"classify": "guard_user_input", "invalid_question": "invalid_question"},
+    )
+    builder.add_conditional_edges(
+        "guard_user_input",
+        route_after_input_guard,
+        {"classify": "classify", "guardrail_response": "guardrail_response"},
     )
     source_routes = {
         "retrieve": "retrieve",
@@ -86,13 +104,18 @@ def build_agent_graph(
     builder.add_conditional_edges(
         "classify",
         route_after_classification,
-        {**source_routes, "route_failure": "route_failure"},
+        {
+            **source_routes,
+            "route_failure": "route_failure",
+            "guardrail_response": "guardrail_response",
+        },
     )
     for source_node in ("retrieve", "incident_tool", "inventory_tool"):
         builder.add_conditional_edges(source_node, route_after_source, source_routes)
-    builder.add_edge("invalid_question", END)
-    builder.add_edge("generate_answer", END)
-    builder.add_edge("no_context", END)
-    builder.add_edge("route_failure", END)
+    for final_node in (
+        "invalid_question", "guardrail_response", "generate_answer", "no_context", "route_failure"
+    ):
+        builder.add_edge(final_node, "validate_response_output")
+    builder.add_edge("validate_response_output", END)
 
     return builder.compile(checkpointer=checkpointer)

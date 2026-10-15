@@ -5,8 +5,17 @@ import inspect
 import json
 from typing import Any
 
-from src.agent import rag_adapter
 from src.agent import routing as routing_adapter
+from src.agent.guardrails import (
+    CASUAL_REDIRECT,
+    JAILBREAK_RESPONSE,
+    OUT_OF_SCOPE_RESPONSE,
+    PERSONAL_TASK_RESPONSE,
+    SAFE_OUTPUT_FALLBACK,
+    inspect_user_input,
+    untrusted_content,
+    validate_model_output,
+)
 from src.agent.operational_tools import IncidentLookupResult, InventoryLookupResult
 from src.agent.state import (
     AgentState,
@@ -20,6 +29,7 @@ from src.agent.memory_generation import generate_answer_and_proposal
 RetrieveFn = Callable[[str], list[dict[str, Any]]]
 GenerateAnswerFn = Callable[[str, list[dict[str, Any]]], str]
 NoContextMessageFn = Callable[[], str]
+CasualAnswerFn = Callable[[str], str | None]
 ClassifyFn = Callable[[str], RoutingDecision]
 IncidentLookupFn = Callable[
     [IncidentLookupInput], IncidentLookupResult | Awaitable[IncidentLookupResult]
@@ -42,6 +52,41 @@ def validate_question(state: AgentState) -> dict[str, str]:
     return {"question": question.strip(), "error": ""}
 
 
+def guard_user_input(
+    state: AgentState,
+    *,
+    casual_fn: CasualAnswerFn | None = None,
+) -> dict[str, Any]:
+    decision = inspect_user_input(state["question"])
+    result: dict[str, Any] = {
+        "guardrail_action": decision.action,
+        "guardrail_category": decision.category or "",
+        "guardrail_reason": decision.reason,
+    }
+    if decision.action == "refuse":
+        result["answer"] = decision.response
+    elif decision.action == "redirect":
+        try:
+            from src.agent.memory_generation import generate_casual_answer
+
+            casual_fn = casual_fn or generate_casual_answer
+            brief_answer = casual_fn(state["question"])
+        except Exception:
+            brief_answer = None
+        result["answer"] = (
+            f"{brief_answer.strip()} {CASUAL_REDIRECT}"
+            if isinstance(brief_answer, str) and brief_answer.strip()
+            else CASUAL_REDIRECT
+        )
+    if decision.action != "allow":
+        result["guardrail_event"] = {
+            "category": decision.category or "scope",
+            "action": decision.action,
+            "reason": decision.reason,
+        }
+    return result
+
+
 def retrieve_context(
     state: AgentState,
     *,
@@ -58,15 +103,58 @@ def classify_question(
     state: AgentState,
     *,
     classify_fn: ClassifyFn | None = None,
+    casual_fn: CasualAnswerFn | None = None,
 ) -> dict[str, Any]:
     classify_fn = classify_fn or routing_adapter.classify_question
     try:
-        decision = classify_fn(state["question"])
+        decision = (
+            RoutingDecision.model_validate(state["routing_decision"])
+            if state.get("routing_decision")
+            else classify_fn(state["question"])
+        )
     except Exception:
         return {
             "sources": [],
             "completed_sources": [],
             "route_error": "No se pudo determinar qué fuentes consultar.",
+        }
+
+    if decision.scope != "trackflow":
+        if decision.scope == "instruction_override":
+            action, category, reason = "refuse", "security", "instruction_override"
+            answer = JAILBREAK_RESPONSE
+        elif decision.scope == "personal":
+            action, category, reason = "refuse", "scope", "personal_task"
+            answer = PERSONAL_TASK_RESPONSE
+        elif decision.scope == "casual":
+            action, category, reason = "redirect", "scope", "general_casual_question"
+            try:
+                from src.agent.memory_generation import generate_casual_answer
+
+                casual_fn = casual_fn or generate_casual_answer
+                brief_answer = casual_fn(state["question"])
+            except Exception:
+                brief_answer = None
+            answer = (
+                f"{brief_answer.strip()} {CASUAL_REDIRECT}"
+                if isinstance(brief_answer, str) and brief_answer.strip()
+                else CASUAL_REDIRECT
+            )
+        else:
+            action, category, reason = "redirect", "scope", "out_of_scope"
+            answer = OUT_OF_SCOPE_RESPONSE
+        return {
+            "sources": [],
+            "completed_sources": [],
+            "answer": answer,
+            "guardrail_action": action,
+            "guardrail_category": category,
+            "guardrail_reason": reason,
+            "guardrail_event": {
+                "category": category,
+                "action": action,
+                "reason": reason,
+            },
         }
 
     return {
@@ -130,9 +218,15 @@ def generate_response(
     inventory_result = state.get("inventory_result")
 
     if incident_result and incident_result.get("status") == "success":
-        evidence.append({"source": "incidents", "text": json.dumps(incident_result["incidents"], ensure_ascii=False)})
+        evidence.append(untrusted_content(
+            "incidents",
+            json.dumps(incident_result["incidents"], ensure_ascii=False),
+        ))
     if inventory_result and inventory_result.get("status") == "success":
-        evidence.append({"source": "inventory", "text": json.dumps(inventory_result["products"], ensure_ascii=False)})
+        evidence.append(untrusted_content(
+            "inventory",
+            json.dumps(inventory_result["products"], ensure_ascii=False),
+        ))
 
     if incident_result and incident_result.get("status") == "not_found":
         return {"answer": "No encontré un ticket que coincida; no puedo confirmar su estado."}
@@ -153,8 +247,15 @@ def generate_response(
             state["question"], evidence, state.get("memories", [])
         )
     except Exception:
-        # Preserve response availability if structured self-evaluation fails.
-        return {"answer": rag_adapter.generate_answer(state["question"], evidence), "memory_proposal": None}
+        return {
+            "answer": SAFE_OUTPUT_FALLBACK,
+            "memory_proposal": None,
+            "guardrail_event": {
+                "category": "structural",
+                "action": "refuse",
+                "reason": "structured_generation_failed",
+            },
+        }
     answer = result.answer
     proposal = result.proposal
     if proposal:
@@ -162,6 +263,21 @@ def generate_response(
     return {
         "answer": answer,
         "memory_proposal": proposal.model_dump() if proposal else None,
+    }
+
+
+def validate_response_output(state: AgentState) -> dict[str, Any]:
+    reason = validate_model_output(state.get("answer"))
+    if reason is None:
+        return {}
+    return {
+        "answer": SAFE_OUTPUT_FALLBACK,
+        "memory_proposal": None,
+        "guardrail_event": {
+            "category": "structural" if reason == "invalid_response_structure" else "content",
+            "action": "refuse",
+            "reason": reason,
+        },
     }
 
 
@@ -178,9 +294,15 @@ def route_after_validation(state: AgentState) -> str:
     return "invalid_question" if state.get("error") else "classify"
 
 
+def route_after_input_guard(state: AgentState) -> str:
+    return "classify" if state.get("guardrail_action") == "allow" else "guardrail_response"
+
+
 def route_after_classification(state: AgentState) -> str:
     if state.get("route_error"):
         return "route_failure"
+    if state.get("guardrail_event"):
+        return "guardrail_response"
     return _next_source(state)
 
 
@@ -205,4 +327,11 @@ def _next_source(state: AgentState) -> str:
 
 
 def respond_to_route_failure(_state: AgentState) -> dict[str, str]:
-    return {"answer": "No pude determinar qué información consultar. Inténtalo de nuevo."}
+    return {
+        "answer": OUT_OF_SCOPE_RESPONSE,
+        "guardrail_event": {
+            "category": "structural",
+            "action": "redirect",
+            "reason": "scope_classification_failed",
+        },
+    }

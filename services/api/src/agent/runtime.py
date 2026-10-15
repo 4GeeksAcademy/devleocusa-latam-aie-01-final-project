@@ -24,8 +24,7 @@ def _checkpoint_connection_string() -> str:
 
 
 def _configure_langsmith() -> None:
-    if os.getenv("LANGSMITH_API_KEY"):
-        os.environ.setdefault("LANGSMITH_TRACING", "true")
+    if os.getenv("LANGSMITH_API_KEY") and os.getenv("LANGSMITH_TRACING", "").lower() == "true":
         os.environ.setdefault("LANGSMITH_PROJECT", "trackflow-agent")
 
 
