@@ -2,7 +2,13 @@ import { apiFetch } from "./authApi";
 
 // Types mirroring the FastAPI schemas in services/api/src/routes/rfp_router.py
 
-export type RFPStatus = "analizando" | "analisis_completo" | "descartado";
+export type RFPStatus =
+  | "analizando"
+  | "analisis_completo"
+  | "descartado"
+  | "generando_borrador"
+  | "en_evaluación"
+  | "needs_human_review";
 
 export interface RFPUploadResponse {
   ticket_id: string;
@@ -54,9 +60,22 @@ export interface RFPArtifactOut {
   department: string;
   contact_name: string | null;
   contact_role: string | null;
-  status: "pendiente" | "procesando" | "completado" | "error";
+  status: string;
   worker_error: string | null;
   key_aspects: RFPKeyAspects | null;
+  proposal_draft: string | null;
+  evaluation_result: EvaluationResult | null;
+  iteration_count: number;
+}
+
+export interface EvaluationResult {
+  section_id: string;
+  department_id: string;
+  readability: { pass: boolean; score: number; details: string };
+  relevance: { pass: boolean; missing_aspects: string[] };
+  compliance: { pass: boolean; rule_ids: string[]; violations: string[] };
+  overall_pass: boolean;
+  feedback_for_generator: string;
 }
 
 export interface RFPTicketDetail extends RFPTicketSummary {
@@ -65,6 +84,7 @@ export interface RFPTicketDetail extends RFPTicketSummary {
   markdown_path: string | null;
   synthesis_summary: string | null;
   dispatched_at: string | null;
+  proposal_completed_at: string | null;
   document: RFPDocumentOut | null;
   sections: RFPArtifactOut[];
   handoff_payload: Record<string, unknown> | null;
@@ -74,6 +94,9 @@ export const RFP_STATUS_LABELS: Record<RFPStatus, string> = {
   analizando: "Analizando",
   analisis_completo: "Análisis completo",
   descartado: "Descartado",
+  generando_borrador: "Generando borrador",
+  "en_evaluación": "En evaluación",
+  needs_human_review: "Revisión humana requerida",
 };
 
 export const DEPARTMENT_LABELS: Record<string, string> = {

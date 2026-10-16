@@ -5,6 +5,9 @@ const STATUS_STYLES: Record<RFPStatus, string> = {
   analizando: "bg-amber-100 text-amber-800",
   analisis_completo: "bg-emerald-100 text-emerald-800",
   descartado: "bg-rose-100 text-rose-800",
+  generando_borrador: "bg-blue-100 text-blue-800",
+  "en_evaluación": "bg-violet-100 text-violet-800",
+  needs_human_review: "bg-orange-100 text-orange-900",
 };
 
 export default function RfpStatusBadge({ status }: { status: RFPStatus }) {

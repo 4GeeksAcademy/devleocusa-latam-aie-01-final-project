@@ -68,3 +68,34 @@ El flag `dispatched_at` evita que dos consumidores tomen el mismo ticket (claim 
 | `analisis_completo` | El synthesizer terminó; Ventas puede leer los aspectos clave por departamento |
 
 > `esperando_aprobacion` pertenece a la Parte 2 y NO existe en esta fase.
+
+
+## Parte 2: generación de propuesta
+
+El consumidor CLI `python scripts/rfp_proposals.py` toma atómicamente un ticket
+`analisis_completo` con `dispatched_at IS NULL`. Recibe `ticket_id` y el JSON ya
+persistido en `handoff_payload`; usa `workstreams[].key_aspects` y
+`synthesizer_summary` y no vuelve a analizar el PDF.
+
+Cada workstream se procesa de manera independiente. Los generadores están
+configurados individualmente para las siete claves departamentales del catálogo.
+Legibilidad, pertinencia y compliance evalúan cada borrador en paralelo; el
+orquestador combina sus resultados estructurados antes de persistirlos.
+
+El límite predeterminado es de tres intentos (`--max-iterations`). En cada
+transición se persiste el estado del ticket/sección. Al agotar el límite se
+conservan borrador, contador y `EvaluationResult`, la sección se marca
+`needs_human_review` y se mantiene dentro de `proposal_sections` del handoff. Si
+alguna sección necesita revisión, el ticket también queda en ese estado. Un
+error de una sección no elimina ni cancela las otras.
+
+Cada sección del resultado incluye `department`, `draft`, `evaluation_result`,
+`iteration_count` y `status`. `evaluation_result` tiene `readability`,
+`relevance`, `compliance`, `overall_pass` y `feedback_for_generator`. Las
+reglas de compliance se basan en `CONTEXT-trackflow-briefing.es.md` y en
+`docs/company-knowledge-base/trackflow-{storage-pricing,sla-delivery,returns-policy,carrier-coverage}.es.md`.
+Esos archivos constituyen las fuentes TrackFlow disponibles en este workspace;
+no hay un archivo `CONTEXT-company.md` separado.
+
+Antes de ejecutar en un entorno PostgreSQL existente, aplicar
+`services/api/data/migrations/002_rfp_proposal_generation.sql`.
