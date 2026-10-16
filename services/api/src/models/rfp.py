@@ -38,6 +38,9 @@ class RFPStatus(str, Enum):
     ANALIZANDO = "analizando"
     DESCARTADO = "descartado"
     ANALISIS_COMPLETO = "analisis_completo"
+    GENERANDO_BORRADOR = "generando_borrador"
+    EN_EVALUACION = "en_evaluación"
+    NEEDS_HUMAN_REVIEW = "needs_human_review"
 
 
 class DepartmentKey(str, Enum):
@@ -127,6 +130,7 @@ class RFPTicket(SQLModel, table=True):
     #: Queue flag for Parte 2: rows with status=analisis_completo AND
     #: dispatched_at IS NULL are pending pickup. No second API needed.
     dispatched_at: Optional[datetime] = Field(default=None)
+    proposal_completed_at: Optional[datetime] = Field(default=None)
 
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
@@ -182,6 +186,11 @@ class DepartmentSection(SQLModel, table=True):
 
     status: str = Field(default=SectionStatus.PENDIENTE.value, max_length=20, nullable=False)
     worker_error: Optional[str] = Field(default=None)
+
+    #: Parte 2 artifacts, retained even when human review is required.
+    proposal_draft: Optional[str] = Field(default=None)
+    evaluation_result: Optional[str] = Field(default=None)
+    iteration_count: int = Field(default=0, nullable=False)
 
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)

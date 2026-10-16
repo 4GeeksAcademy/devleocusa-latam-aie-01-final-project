@@ -68,7 +68,7 @@ export default function RfpTicketDetailPage() {
 
   // Poll while the background pipeline is still running.
   useEffect(() => {
-    if (!ticket || ticket.status !== "analizando") return;
+    if (!ticket || !["analizando", "generando_borrador", "en_evaluación"].includes(ticket.status)) return;
     const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
   }, [ticket, refresh]);
@@ -115,11 +115,13 @@ export default function RfpTicketDetailPage() {
         )}
       </p>
 
-      {ticket.status === "analizando" && (
+      {["analizando", "generando_borrador", "en_evaluación"].includes(ticket.status) && (
         <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          El flujo agéntico sigue trabajando: conversión PDF → Markdown,
-          clasificación y descomposición por departamento. Esta página se
-          actualiza sola.
+          {ticket.status === "analizando"
+            ? "El flujo analiza la RFP y prepara el handoff por departamento."
+            : ticket.status === "generando_borrador"
+              ? "Los agentes departamentales están generando borradores."
+              : "Los evaluadores revisan legibilidad, pertinencia y cumplimiento."} Esta página se actualiza sola.
         </div>
       )}
 
@@ -142,7 +144,7 @@ export default function RfpTicketDetailPage() {
         </div>
       )}
 
-      {ticket.status === "analisis_completo" && (
+      {["analisis_completo", "generando_borrador", "en_evaluación", "needs_human_review"].includes(ticket.status) && (
         <>
           {doc && (
             <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -207,7 +209,13 @@ export default function RfpTicketDetailPage() {
                           </span>
                         )}
                       </h3>
-                      {section.status === "error" ? (
+                      {section.status === "needs_human_review" ? (
+                        <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-900">revisión humana</span>
+                      ) : section.status === "generando_borrador" ? (
+                        <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800">generando borrador</span>
+                      ) : section.status === "en_evaluación" ? (
+                        <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-semibold text-violet-800">en evaluación</span>
+                      ) : section.status === "error" ? (
                         <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-semibold text-rose-800">
                           error del worker
                         </span>
@@ -233,6 +241,27 @@ export default function RfpTicketDetailPage() {
                     )}
 
                     <RfpKeyAspectsCard aspects={section.key_aspects} />
+
+                    {section.proposal_draft && (
+                      <div className={`mt-4 rounded-lg border p-4 ${section.status === "needs_human_review" ? "border-orange-300 bg-orange-50" : "border-slate-200 bg-slate-50"}`}>
+                        {section.status === "needs_human_review" && (
+                          <p className="mb-2 font-semibold text-orange-900">Borrador provisional — requiere revisión humana; se agotó el límite de intentos.</p>
+                        )}
+                        <h4 className="mb-2 font-semibold text-slate-900">Borrador de propuesta · intento {section.iteration_count}</h4>
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{section.proposal_draft}</p>
+                        {section.evaluation_result && (
+                          <div className="mt-3 border-t border-slate-200 pt-3 text-sm">
+                            <p className="font-semibold">Evaluación: {section.evaluation_result.overall_pass ? "Aprobada" : "No aprobada"}</p>
+                            <ul className="mt-1 list-disc pl-5 text-slate-700">
+                              <li>Legibilidad: {section.evaluation_result.readability.pass ? "aprobada" : "requiere cambios"} — {section.evaluation_result.readability.details}</li>
+                              <li>Pertinencia: {section.evaluation_result.relevance.pass ? "aprobada" : `faltan ${section.evaluation_result.relevance.missing_aspects.join(", ") || "aspectos"}`}</li>
+                              <li>Cumplimiento: {section.evaluation_result.compliance.pass ? "aprobado" : `reglas ${section.evaluation_result.compliance.rule_ids.join(", ")}`}</li>
+                            </ul>
+                            {!section.evaluation_result.overall_pass && <p className="mt-2 text-rose-800">{section.evaluation_result.feedback_for_generator}</p>}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>

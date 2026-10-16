@@ -41,3 +41,21 @@ def status_descartado() -> str:
 
 def status_analisis_completo() -> str:
     return _runner_module().STATUS_ANALISIS_COMPLETO
+
+
+def run_proposal_handoff(handoff: dict[str, Any], *, max_iterations: int, on_update: Any) -> dict[str, Any]:
+    """Run Parte 2 against the already-persisted Part 1 synthesizer payload."""
+    pipeline_source = next(
+        (ancestor / "data" / "pipelines" / "src" for ancestor in Path(__file__).resolve().parents
+         if (ancestor / "data" / "pipelines" / "src" / "rfp_intake" / "proposal.py").is_file()),
+        None,
+    )
+    if pipeline_source is None:
+        raise RuntimeError("No se encontró data/pipelines/src/rfp_intake/proposal.py")
+    if str(pipeline_source) not in sys.path:
+        sys.path.insert(0, str(pipeline_source))
+    import asyncio
+    module = importlib.import_module("rfp_intake.proposal")
+    return asyncio.run(module.run_proposal_handoff(
+        handoff, max_iterations=max_iterations, on_update=on_update
+    ))

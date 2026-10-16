@@ -22,6 +22,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import selectinload  # noqa: F401  (kept for future joins)
+from sqlalchemy import update
 from sqlmodel import Session, delete, select
 
 from src import pipeline_adapter
@@ -243,3 +244,141 @@ def get_ticket_bundle(
         ).all()
     )
     return ticket, document, sections
+
+
+# ── Parte 2 proposal generation ────────────────────────────────────────
+
+def claim_next_proposal_ticket(session: Session) -> RFPTicket | None:
+    """Atomically claim one pending Part 1 handoff; returns None if queue empty."""
+    candidate = session.exec(
+        select(RFPTicket.id)
+        .where(
+            RFPTicket.status == RFPStatus.ANALISIS_COMPLETO.value,
+            RFPTicket.dispatched_at.is_(None),
+            RFPTicket.handoff_payload.is_not(None),
+        )
+        .order_by(RFPTicket.created_at)
+        .limit(1)
+    ).first()
+    if candidate is None:
+        return None
+    now = _utcnow()
+    claimed = session.exec(
+        update(RFPTicket)
+        .where(
+            RFPTicket.id == candidate,
+            RFPTicket.status == RFPStatus.ANALISIS_COMPLETO.value,
+            RFPTicket.dispatched_at.is_(None),
+        )
+        .values(dispatched_at=now, status=RFPStatus.GENERANDO_BORRADOR.value, updated_at=now)
+        .returning(RFPTicket.id)
+    ).first()
+    if claimed is None:
+        session.rollback()
+        return None
+    session.commit()
+    return session.get(RFPTicket, claimed)
+
+
+def set_proposal_status(session: Session, ticket_id: str, status: str) -> None:
+    ticket = session.get(RFPTicket, ticket_id)
+    if ticket is None:
+        raise ValueError(f"Ticket no encontrado: {ticket_id}")
+    ticket.status = status
+    ticket.updated_at = _utcnow()
+    session.add(ticket)
+    session.commit()
+
+
+def persist_proposal_section(
+    session: Session, ticket_id: str, department: str, update: dict[str, Any]
+) -> None:
+    """Persist latest section snapshot after each generation/evaluation transition."""
+    section = session.exec(
+        select(DepartmentSection).where(
+            DepartmentSection.ticket_id == ticket_id,
+            DepartmentSection.department == department,
+        )
+    ).first()
+    if section is None:
+        raise ValueError(f"Sección {department} no existe en ticket {ticket_id}")
+    if update.get("draft") is not None:
+        section.proposal_draft = str(update["draft"])
+    if "evaluation_result" in update:
+        section.evaluation_result = (
+            json.dumps(update["evaluation_result"], ensure_ascii=False)
+            if update["evaluation_result"] is not None
+            else None
+        )
+    if update.get("iteration_count") is not None:
+        section.iteration_count = int(update["iteration_count"])
+    section.status = str(update.get("status", section.status))[:30]
+    section.worker_error = update.get("error")
+    section.updated_at = _utcnow()
+    session.add(section)
+    ticket = session.get(RFPTicket, ticket_id)
+    if ticket is not None:
+        ticket.updated_at = _utcnow()
+        session.add(ticket)
+    session.commit()
+
+
+def persist_proposal_handoff(session: Session, ticket_id: str, payload: dict[str, Any]) -> None:
+    """Persist complete Part 3 handoff; failed sections remain included."""
+    ticket = session.get(RFPTicket, ticket_id)
+    if ticket is None:
+        raise ValueError(f"Ticket no encontrado: {ticket_id}")
+    ticket.handoff_payload = json.dumps(payload, ensure_ascii=False)
+    ticket.proposal_completed_at = _utcnow()
+    ticket.status = (
+        RFPStatus.NEEDS_HUMAN_REVIEW.value
+        if payload.get("needs_human_review")
+        else RFPStatus.ANALISIS_COMPLETO.value
+    )
+    ticket.updated_at = _utcnow()
+    session.add(ticket)
+    session.commit()
+
+
+def process_next_proposal_ticket(max_iterations: int = 3) -> str | None:
+    """Claim and process one Part 1 handoff without adding an HTTP service."""
+    with Session(get_engine()) as session:
+        ticket = claim_next_proposal_ticket(session)
+        if ticket is None:
+            return None
+        ticket_id = ticket.id
+        try:
+            handoff = json.loads(ticket.handoff_payload or "{}")
+        except json.JSONDecodeError as exc:
+            ticket.status = RFPStatus.NEEDS_HUMAN_REVIEW.value
+            ticket.error_detail = f"Handoff inválido para Parte 2: {exc}"
+            ticket.updated_at = _utcnow()
+            session.add(ticket)
+            session.commit()
+            return ticket_id
+
+    def on_update(department: str, update_payload: dict[str, Any]) -> None:
+        with Session(get_engine()) as session:
+            if update_payload.get("status") == "en_evaluación":
+                set_proposal_status(session, ticket_id, RFPStatus.EN_EVALUACION.value)
+            elif update_payload.get("status") == "generando_borrador":
+                set_proposal_status(session, ticket_id, RFPStatus.GENERANDO_BORRADOR.value)
+            persist_proposal_section(session, ticket_id, department, update_payload)
+
+    try:
+        result = pipeline_adapter.run_proposal_handoff(
+            handoff, max_iterations=max_iterations, on_update=on_update
+        )
+        with Session(get_engine()) as session:
+            persist_proposal_handoff(session, ticket_id, result)
+    except Exception as exc:
+        logger.exception("Parte 2 falló en ticket %s", ticket_id)
+        with Session(get_engine()) as session:
+            ticket = session.get(RFPTicket, ticket_id)
+            if ticket is not None:
+                ticket.status = RFPStatus.NEEDS_HUMAN_REVIEW.value
+                ticket.error_detail = f"Error de propuesta; borradores conservados: {exc}"
+                ticket.updated_at = _utcnow()
+                session.add(ticket)
+                session.commit()
+    return ticket_id

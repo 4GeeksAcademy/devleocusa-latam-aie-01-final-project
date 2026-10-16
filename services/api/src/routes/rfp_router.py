@@ -72,6 +72,9 @@ class RFPArtifactOut(BaseModel):
     status: str
     worker_error: str | None = None
     key_aspects: dict[str, Any] | None = None
+    proposal_draft: str | None = None
+    evaluation_result: dict[str, Any] | None = None
+    iteration_count: int = 0
 
 
 class RFPTicketDetail(RFPTicketSummary):
@@ -80,6 +83,7 @@ class RFPTicketDetail(RFPTicketSummary):
     markdown_path: str | None = None
     synthesis_summary: str | None = None
     dispatched_at: datetime | None = None
+    proposal_completed_at: datetime | None = None
     document: RFPDocumentOut | None = None
     sections: list[RFPArtifactOut] = Field(default_factory=list)
     handoff_payload: dict[str, Any] | None = None
@@ -139,6 +143,9 @@ def _detail(
             status=section.status,
             worker_error=section.worker_error,
             key_aspects=_parse_json(section.key_aspects),
+            proposal_draft=section.proposal_draft,
+            evaluation_result=_parse_json(section.evaluation_result),
+            iteration_count=section.iteration_count,
         )
         for section in sections
     ]
@@ -150,6 +157,7 @@ def _detail(
         markdown_path=ticket.markdown_path,
         synthesis_summary=ticket.synthesis_summary,
         dispatched_at=ticket.dispatched_at,
+        proposal_completed_at=ticket.proposal_completed_at,
         document=document_out,
         sections=sections_out,
         handoff_payload=_parse_json(ticket.handoff_payload),
@@ -242,8 +250,8 @@ def list_rfp_tickets(
     response_model=RFPTicketDetail,
     summary="Detalle de un ticket RFP",
     description=(
-        "Estado actual + metadatos + metricas de legibilidad + aspectos clave "
-        "por departamento + resumen del synthesizer + handoff para la Parte 2."
+        "Estado actual + metadatos + aspectos clave, borradores y evaluaciones "
+        "por departamento + handoff de propuesta."
     ),
 )
 def get_rfp_ticket(
