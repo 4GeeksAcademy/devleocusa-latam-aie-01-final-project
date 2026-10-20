@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,11 +30,16 @@ from src import pipeline_adapter
 from src.database import get_engine
 from src.models.rfp import (
     DepartmentSection,
+    HITO9_DEPARTMENT_APPROVERS,
     RFPDocument,
+    RFPFinalDocument,
+    RFPNodeTrace,
     RFPTicket,
     RFPStatus,
     SectionStatus,
+    LEGACY_TO_HITO9_DEPARTMENT,
 )
+from src.services.user_service import get_user_by_email
 
 logger = logging.getLogger(__name__)
 
@@ -248,9 +254,9 @@ def get_ticket_bundle(
 
 # ── Parte 2 proposal generation ────────────────────────────────────────
 
-def claim_next_proposal_ticket(session: Session) -> RFPTicket | None:
-    """Atomically claim one pending Part 1 handoff; returns None if queue empty."""
-    candidate = session.exec(
+def claim_next_proposal_ticket(session: Session, ticket_id: str | None = None) -> RFPTicket | None:
+    """Atomically claim one pending handoff, optionally restricting to one ticket."""
+    statement = (
         select(RFPTicket.id)
         .where(
             RFPTicket.status == RFPStatus.ANALISIS_COMPLETO.value,
@@ -259,7 +265,10 @@ def claim_next_proposal_ticket(session: Session) -> RFPTicket | None:
         )
         .order_by(RFPTicket.created_at)
         .limit(1)
-    ).first()
+    )
+    if ticket_id is not None:
+        statement = statement.where(RFPTicket.id == ticket_id)
+    candidate = session.exec(statement).first()
     if candidate is None:
         return None
     now = _utcnow()
@@ -340,10 +349,10 @@ def persist_proposal_handoff(session: Session, ticket_id: str, payload: dict[str
     session.commit()
 
 
-def process_next_proposal_ticket(max_iterations: int = 3) -> str | None:
-    """Claim and process one Part 1 handoff without adding an HTTP service."""
+def process_next_proposal_ticket(max_iterations: int = 3, ticket_id: str | None = None) -> str | None:
+    """Claim one Part 1 handoff; optionally target a ticket instead of global FIFO."""
     with Session(get_engine()) as session:
-        ticket = claim_next_proposal_ticket(session)
+        ticket = claim_next_proposal_ticket(session, ticket_id=ticket_id)
         if ticket is None:
             return None
         ticket_id = ticket.id
@@ -357,6 +366,19 @@ def process_next_proposal_ticket(max_iterations: int = 3) -> str | None:
             session.commit()
             return ticket_id
 
+    # Hito 9 activates only three departments; keep legacy rows but exclude the rest.
+    canonical_to_legacy = {value: key for key, value in LEGACY_TO_HITO9_DEPARTMENT.items()}
+    active_workstreams = []
+    for item in handoff.get("workstreams", []):
+        if not isinstance(item, dict):
+            continue
+        department = str(item.get("department", ""))
+        if department in LEGACY_TO_HITO9_DEPARTMENT:
+            active_workstreams.append(item)
+        elif department in canonical_to_legacy:
+            active_workstreams.append({**item, "department": canonical_to_legacy[department]})
+    handoff["workstreams"] = active_workstreams
+
     def on_update(department: str, update_payload: dict[str, Any]) -> None:
         with Session(get_engine()) as session:
             if update_payload.get("status") == "en_evaluación":
@@ -367,10 +389,20 @@ def process_next_proposal_ticket(max_iterations: int = 3) -> str | None:
 
     try:
         result = pipeline_adapter.run_proposal_handoff(
-            handoff, max_iterations=max_iterations, on_update=on_update
+            handoff,
+            max_iterations=max_iterations,
+            on_update=on_update,
+            generator=pipeline_adapter.proposal_helpers()[0],
         )
-        with Session(get_engine()) as session:
-            persist_proposal_handoff(session, ticket_id, result)
+        def persist_live_trace(event: dict[str, Any]) -> None:
+            with Session(get_engine()) as trace_session:
+                _persist_trace_event(trace_session, ticket_id, event)
+        with pipeline_adapter.department_approval_runtime(on_trace=persist_live_trace) as graph:
+            with Session(get_engine()) as session:
+                persist_proposal_handoff(session, ticket_id, result)
+                # Parte 2's exhausted evaluator budget still hands its last
+                # draft to the department owner for an explicit sign-off.
+                begin_human_approval(session, ticket_id, graph=graph, max_iterations=max_iterations)
     except Exception as exc:
         logger.exception("Parte 2 falló en ticket %s", ticket_id)
         with Session(get_engine()) as session:
@@ -382,3 +414,281 @@ def process_next_proposal_ticket(max_iterations: int = 3) -> str | None:
                 session.add(ticket)
                 session.commit()
     return ticket_id
+
+
+def _canonical_handoff(ticket: RFPTicket, sections: list[DepartmentSection]) -> dict[str, Any]:
+    """Return exactly the active Hito 9 workstreams, retaining Part 1 aspects."""
+    raw = json.loads(ticket.handoff_payload or "{}")
+    source = raw.get("workstreams") or raw.get("handoff") or []
+    by_department = {str(item.get("department", "")): item for item in source if isinstance(item, dict)}
+    existing_proposals = raw.get("proposal_sections", [])
+    workstreams: list[dict[str, Any]] = []
+    for section in sections:
+        department_id = LEGACY_TO_HITO9_DEPARTMENT.get(section.department, section.department)
+        if department_id not in HITO9_DEPARTMENT_APPROVERS:
+            continue
+        workstream = by_department.get(section.department, by_department.get(department_id, {}))
+        aspects = json.loads(section.key_aspects) if section.key_aspects else workstream.get("key_aspects", {})
+        workstreams.append({
+            **workstream,
+            "department": department_id,
+            "key_aspects": aspects if isinstance(aspects, dict) else {},
+        })
+        section.department_id = department_id
+        section.approver = HITO9_DEPARTMENT_APPROVERS[department_id]
+        section.updated_at = _utcnow()
+    return {
+        "ticket_id": ticket.id,
+        "synthesizer_summary": ticket.synthesis_summary or raw.get("synthesizer_summary") or "",
+        "workstreams": workstreams,
+        "proposal_sections": existing_proposals,
+        "country": raw.get("country") or raw.get("client_country") or raw.get("pais"),
+    }
+
+
+def begin_human_approval(session: Session, ticket_id: str, *, graph: Any, max_iterations: int = 3) -> None:
+    """Generate all active sections independently and persist each interrupt."""
+    ticket = session.get(RFPTicket, ticket_id)
+    if ticket is None:
+        raise ValueError(f"Ticket no encontrado: {ticket_id}")
+    sections = list(session.exec(select(DepartmentSection).where(DepartmentSection.ticket_id == ticket_id)).all())
+    handoff = _canonical_handoff(ticket, sections)
+    active_ids = {workstream["department"] for workstream in handoff["workstreams"]}
+    for section in sections:
+        normalized = LEGACY_TO_HITO9_DEPARTMENT.get(section.department, section.department)
+        if normalized not in active_ids:
+            section.department_id = None
+    session.add_all(sections)
+    session.commit()
+    if not handoff["workstreams"]:
+        raise ValueError("El handoff no contiene departamentos Hito 9 activos.")
+
+    generator, evaluator = pipeline_adapter.proposal_helpers()
+    ticket.status = RFPStatus.GENERANDO_BORRADOR.value
+    session.add(ticket)
+    session.commit()
+    # Isolate each workstream. An interrupt in one graph does not block peers.
+    proposal_results = {LEGACY_TO_HITO9_DEPARTMENT.get(str(item.get("department", "")), str(item.get("department", ""))): item
+                        for item in handoff.get("proposal_sections", []) if isinstance(item, dict)}
+    for workstream in handoff["workstreams"]:
+        department_id = workstream["department"]
+        proposal = proposal_results.get(department_id, {})
+        evaluation = proposal.get("evaluation_result") or {}
+        state = pipeline_adapter.invoke_department_approval(
+            graph,
+            ticket_id=ticket_id,
+            department_id=department_id,
+            workstream=workstream,
+            summary=handoff["synthesizer_summary"],
+            max_iterations=max_iterations,
+            generator=generator,
+            evaluator=evaluator,
+            initial_draft=str(proposal.get("draft") or ""),
+            initial_evaluation=evaluation if isinstance(evaluation, dict) else {},
+            initial_iteration_count=int(proposal.get("iteration_count", 0)),
+        )
+        _persist_approval_state(session, ticket_id, department_id, state)
+    ticket = session.get(RFPTicket, ticket_id)
+    if ticket is not None:
+        ticket.status = RFPStatus.WAITING_APPROVAL.value
+        ticket.updated_at = _utcnow()
+        session.add(ticket)
+        session.commit()
+
+
+def _persist_approval_state(session: Session, ticket_id: str, department_id: str, state: dict[str, Any]) -> None:
+    section = session.exec(select(DepartmentSection).where(
+        DepartmentSection.ticket_id == ticket_id,
+        DepartmentSection.department_id == department_id,
+    )).first()
+    if section is None:
+        raise ValueError(f"Sección Hito 9 ausente: {department_id}")
+    section.proposal_draft = str(state.get("draft") or section.proposal_draft or "")
+    section.evaluation_result = json.dumps(state.get("evaluation_result") or {}, ensure_ascii=False)
+    section.approval_iteration_count = int(state.get("iteration_count", section.approval_iteration_count))
+    section.approval_status = str(state.get("approval_status", "pending"))
+    section.status = SectionStatus.COMPLETADO.value if section.approval_status == "approved" else SectionStatus.PROCESANDO.value
+    section.updated_at = _utcnow()
+    session.add(section)
+    for event in state.get("trace", []):
+        _persist_trace_event(session, ticket_id, event, department_id=department_id)
+    session.commit()
+
+
+def _persist_trace_event(
+    session: Session, ticket_id: str, event: dict[str, Any], *, department_id: str | None = None
+) -> None:
+    """Append a trace exactly once across interrupt/resume cycles."""
+    thread_id = str(event.get("thread_id") or "")
+    if not thread_id:
+        department_id = department_id or str(event.get("department_id") or "")
+        if not department_id:
+            raise ValueError("La traza RFP requiere department_id.")
+        thread_id = f"rfp-{ticket_id}:{department_id}"
+    department_id = department_id or thread_id.rsplit(":", 1)[-1]
+    raw_input = json.dumps(event.get("input"), ensure_ascii=False, default=str)
+    raw_output = json.dumps(event.get("output"), ensure_ascii=False, default=str)
+    existing = session.exec(select(RFPNodeTrace).where(
+        RFPNodeTrace.thread_id == thread_id,
+        RFPNodeTrace.node == str(event["node"]),
+        RFPNodeTrace.input == raw_input,
+        RFPNodeTrace.output == raw_output,
+    )).first()
+    if existing is not None:
+        return
+    previous = session.exec(select(RFPNodeTrace.sequence).where(
+        RFPNodeTrace.thread_id == thread_id,
+    ).order_by(RFPNodeTrace.sequence.desc()).limit(1)).first()
+    session.add(RFPNodeTrace(
+        ticket_id=ticket_id,
+        department_id=department_id,
+        thread_id=thread_id,
+        sequence=(int(previous) if previous is not None else 0) + 1,
+        node=str(event["node"]),
+        agent=str(event["agent"]),
+        input=raw_input,
+        output=raw_output,
+        occurred_at=datetime.fromisoformat(str(event["timestamp"])),
+    ))
+    session.commit()
+
+
+def submit_department_decision(
+    session: Session, *, ticket_id: str, department_id: str,
+    user_email: str, decision: dict[str, str],
+) -> dict[str, Any]:
+    if department_id not in HITO9_DEPARTMENT_APPROVERS:
+        raise ValueError("Departamento inválido.")
+    assigned_email = _approver_email(department_id)
+    if assigned_email.casefold().endswith(".example") and (
+        not os.getenv("RFP_ALLOW_TEST_APPROVERS", "").casefold() == "true"
+        or ticket_id != os.getenv("RFP_APPROVER_TEST_TICKET_ID", "").strip()
+    ):
+        raise PermissionError("La identidad de prueba solo puede aprobar el ticket sintético configurado.")
+    ticket = session.get(RFPTicket, ticket_id)
+    if ticket is None:
+        raise LookupError("Ticket no encontrado.")
+    if user_email.casefold() != assigned_email.casefold():
+        raise PermissionError("El usuario autenticado no es el aprobador asignado.")
+    section = session.exec(select(DepartmentSection).where(
+        DepartmentSection.ticket_id == ticket_id,
+        DepartmentSection.department_id == department_id,
+    )).first()
+    if section is None:
+        raise LookupError("Sección no encontrada.")
+    if ticket.status != RFPStatus.WAITING_APPROVAL.value:
+        raise ValueError("El ticket no está esperando aprobación.")
+    if section.approval_status in {"approved", "needs_human_review"}:
+        raise ValueError("La sección ya no admite decisiones.")
+    if section.approval_iteration_count >= 3 and decision["decision"] != "approve":
+        section.approval_status = "needs_human_review"
+        session.add(section)
+        session.commit()
+        raise ValueError("Se alcanzó el máximo de iteraciones humanas.")
+
+    return _submit_decision_with_runtime(
+        session, ticket, section, department_id, user_email, decision,
+    )
+
+
+def _submit_decision_with_runtime(
+    session: Session, ticket: RFPTicket, section: DepartmentSection,
+    department_id: str, user_email: str, decision: dict[str, str],
+) -> dict[str, Any]:
+    workstream = {"department": department_id, "key_aspects": json.loads(section.key_aspects or "{}")}
+    generator, evaluator = pipeline_adapter.proposal_helpers()
+    def persist_live_trace(event: dict[str, Any]) -> None:
+        with Session(get_engine()) as trace_session:
+            _persist_trace_event(trace_session, ticket.id, event)
+
+    with pipeline_adapter.department_approval_runtime(on_trace=persist_live_trace) as graph:
+        state = pipeline_adapter.invoke_department_approval(
+            graph, ticket_id=ticket.id, department_id=department_id,
+            workstream=workstream, summary=ticket.synthesis_summary or "",
+            max_iterations=3, generator=generator, evaluator=evaluator, resume=decision,
+        )
+    _persist_approval_state(session, ticket_id, department_id, state)
+    section = session.exec(select(DepartmentSection).where(
+        DepartmentSection.ticket_id == ticket_id,
+        DepartmentSection.department_id == department_id,
+    )).first()
+    assert section is not None
+    section.approver = HITO9_DEPARTMENT_APPROVERS[department_id]
+    section.approval_comment = decision.get("comment") or None
+    if state.get("approval_status") == "approved":
+        section.approved_at = _utcnow()
+    session.add(section)
+    session.commit()
+    _arbitrate_and_finalize(session, ticket.id)
+    return state
+
+
+def _approver_email(department_id: str) -> str:
+    """Map assigned briefing owners to registered TrackFlow identities."""
+    key = f"RFP_APPROVER_{department_id.upper()}_EMAIL"
+    email = os.getenv(key, "").strip()
+    if not email and os.getenv("RFP_ALLOW_TEST_APPROVERS", "").casefold() == "true":
+        email = os.getenv(f"RFP_TEST_APPROVER_{department_id.upper()}_EMAIL", "").strip()
+    is_test_email = email.casefold().endswith(".example")
+    if is_test_email:
+        if os.getenv("RFP_ALLOW_TEST_APPROVERS", "").casefold() != "true":
+            raise PermissionError("Las identidades .example requieren RFP_ALLOW_TEST_APPROVERS=true.")
+        if not os.getenv("RFP_APPROVER_TEST_TICKET_ID", "").strip():
+            raise PermissionError("RFP_APPROVER_TEST_TICKET_ID debe identificar el ticket sintético.")
+        test_user = get_user_by_email(email)
+        if test_user is None or not test_user.is_active:
+            raise PermissionError("La identidad de prueba no está registrada y activa.")
+    if not email:
+        raise PermissionError(f"No existe mapeo de identidad para {department_id}; configure {key}.")
+    return email
+
+
+def _arbitrate_and_finalize(session: Session, ticket_id: str) -> None:
+    ticket = session.get(RFPTicket, ticket_id)
+    if ticket is None:
+        return
+    sections = list(session.exec(select(DepartmentSection).where(
+        DepartmentSection.ticket_id == ticket_id,
+        DepartmentSection.department_id.is_not(None),
+    )).all())
+    structured = []
+    for section in sections:
+        aspects = json.loads(section.key_aspects or "{}")
+        structured.append({"department_id": section.department_id, **aspects})
+    country = ""
+    handoff = json.loads(ticket.handoff_payload or "{}")
+    for key in ("country", "client_country", "pais"):
+        if handoff.get(key):
+            country = str(handoff[key])
+            break
+    if not country:
+        document = session.exec(select(RFPDocument).where(RFPDocument.ticket_id == ticket_id)).first()
+        if document is not None and document.extra_metadata:
+            try:
+                metadata = json.loads(document.extra_metadata)
+                country = str(metadata.get("client_country") or metadata.get("country") or "")
+            except (TypeError, json.JSONDecodeError):
+                country = ""
+    arbitration = pipeline_adapter.arbitrate_conflicts(structured, client_country=country)
+    if arbitration["blocked"]:
+        ticket.status = RFPStatus.WAITING_APPROVAL.value
+        ticket.error_detail = "Arbitraje pendiente: " + ", ".join(c["trigger_id"] for c in arbitration["conflicts"])
+        session.add(ticket)
+        session.commit()
+        return
+    if sections and all(section.approval_status == "approved" for section in sections):
+        payload = [
+            {"department_id": section.department_id, "approver": section.approver,
+             "text": section.proposal_draft, "approved_at": section.approved_at.isoformat() if section.approved_at else None}
+            for section in sections
+        ]
+        document = session.get(RFPFinalDocument, ticket_id) or RFPFinalDocument(ticket_id=ticket_id, sections="[]", currency="USD")
+        document.sections = json.dumps(payload, ensure_ascii=False)
+        document.currency = "EUR" if country.casefold() in {"spain", "españa", "espana"} else "USD"
+        document.generated_at = _utcnow()
+        ticket.status = RFPStatus.COMPLETED.value
+        ticket.error_detail = None
+        ticket.updated_at = _utcnow()
+        session.add(document)
+        session.add(ticket)
+        session.commit()

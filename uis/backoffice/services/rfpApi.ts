@@ -8,7 +8,9 @@ export type RFPStatus =
   | "descartado"
   | "generando_borrador"
   | "en_evaluación"
-  | "needs_human_review";
+  | "needs_human_review"
+  | "esperando_aprobación"
+  | "terminado";
 
 export interface RFPUploadResponse {
   ticket_id: string;
@@ -66,6 +68,12 @@ export interface RFPArtifactOut {
   proposal_draft: string | null;
   evaluation_result: EvaluationResult | null;
   iteration_count: number;
+  department_id: string | null;
+  approval_status: string;
+  approver: string | null;
+  approval_comment: string | null;
+  approved_at: string | null;
+  approval_iteration_count: number;
 }
 
 export interface EvaluationResult {
@@ -88,6 +96,7 @@ export interface RFPTicketDetail extends RFPTicketSummary {
   document: RFPDocumentOut | null;
   sections: RFPArtifactOut[];
   handoff_payload: Record<string, unknown> | null;
+  final_document_available: boolean;
 }
 
 export const RFP_STATUS_LABELS: Record<RFPStatus, string> = {
@@ -97,9 +106,14 @@ export const RFP_STATUS_LABELS: Record<RFPStatus, string> = {
   generando_borrador: "Generando borrador",
   "en_evaluación": "En evaluación",
   needs_human_review: "Revisión humana requerida",
+  "esperando_aprobación": "Esperando aprobación",
+  terminado: "Terminado",
 };
 
 export const DEPARTMENT_LABELS: Record<string, string> = {
+  warehouse: "Almacén",
+  lastmile: "Última milla",
+  reverse: "Devoluciones",
   operaciones_almacen: "Operaciones de Almacén",
   ultima_milla_transportistas: "Última Milla y Gestión de Transportistas",
   logistica_inversa: "Logística Inversa",
@@ -172,5 +186,29 @@ export async function getRfpTicket(id: string): Promise<RFPTicketDetail> {
   if (!data) {
     throw new Error("El servidor no devolvió el detalle del ticket.");
   }
+  return data;
+}
+
+export async function submitRfpDecision(
+  ticketId: string,
+  departmentId: string,
+  decision: "approve" | "reject" | "request_changes",
+  comment = ""
+): Promise<void> {
+  const response = await apiFetch(
+    `/rfp/tickets/${encodeURIComponent(ticketId)}/departments/${encodeURIComponent(departmentId)}/decision`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision, comment }) }
+  );
+  if (!response.ok) {
+    const payload = await parseJson<{ detail?: string }>(response);
+    throw new Error(payload?.detail || `Error ${response.status}: no se pudo guardar la decisión.`);
+  }
+}
+
+export async function getRfpFinalDocument(ticketId: string): Promise<{ sections: { department_id: string; text: string }[]; currency: string; generated_at: string }> {
+  const response = await apiFetch(`/rfp/tickets/${encodeURIComponent(ticketId)}/final-document`);
+  if (!response.ok) throw new Error(`Error ${response.status}: documento final no disponible.`);
+  const data = await parseJson<{ sections: { department_id: string; text: string }[]; currency: string; generated_at: string }>(response);
+  if (!data) throw new Error("Respuesta de documento final inválida.");
   return data;
 }

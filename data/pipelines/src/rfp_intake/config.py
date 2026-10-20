@@ -21,7 +21,11 @@ load_dotenv(_ENV_PATH)
 # ── LLM (reuses the existing GENERATION_* credentials from the RAG stack) ──
 
 LLM_MODEL: str = os.getenv("RFP_AGENT_MODEL") or os.getenv("GENERATION_MODEL_ID", "gpt-4o-mini")
-LLM_API_KEY: str = os.getenv("RFP_AGENT_API_KEY") or os.getenv("GENERATION_API_KEY", "")
+LLM_API_KEY: str = (
+    os.getenv("RFP_AGENT_API_KEY")
+    or os.getenv("GENERATION_API_KEY")
+    or os.getenv("OPENAI_API_KEY", "")
+)
 LLM_BASE_URL: str | None = os.getenv("RFP_AGENT_BASE_URL") or os.getenv("GENERATION_BASE_URL") or None
 
 #: Below this confidence the classifier's rejection demands human review.

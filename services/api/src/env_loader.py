@@ -17,10 +17,11 @@ _ENV_LOADED = False
 def _iter_env_candidates() -> tuple[Path, ...]:
     src_dir = Path(__file__).resolve().parent
     api_root = src_dir.parent
-    return (
-        Path.cwd() / ".env",
-        api_root / ".env",
-    )
+    candidates = (api_root / ".env", Path.cwd() / ".env")
+    # API-specific credentials/config should win over monorepo placeholders
+    # when a CLI is launched from the repository root. Explicit process env
+    # still wins because load_env_if_available uses setdefault.
+    return tuple(dict.fromkeys(candidates))
 
 
 def _normalize_env_value(raw_value: str) -> str:
