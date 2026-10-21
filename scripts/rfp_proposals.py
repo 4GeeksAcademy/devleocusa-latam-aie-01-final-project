@@ -17,6 +17,7 @@ for candidate in (API_DIR, PIPELINES_SRC):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-iterations", type=int, default=3)
+    parser.add_argument("--ticket-id", help="Procesar solo este ticket pendiente (sin reclamar otros de la cola).")
     args = parser.parse_args()
     if args.max_iterations < 1:
         parser.error("--max-iterations debe ser >= 1")
@@ -25,7 +26,7 @@ def main() -> int:
     from src.models.rfp import RFPTicket
     from src.services import rfp_service
 
-    processed_id = rfp_service.process_next_proposal_ticket(args.max_iterations)
+    processed_id = rfp_service.process_next_proposal_ticket(args.max_iterations, ticket_id=args.ticket_id)
     if processed_id is None:
         print("No hay tickets pendientes de Parte 2")
         return 0

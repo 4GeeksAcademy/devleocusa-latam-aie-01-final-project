@@ -16,13 +16,15 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from src.database import get_sql_session
-from src.models.rfp import RFPTicket, RFPStatus
+from src.models.rfp import DepartmentSection, RFPFinalDocument, RFPTicket, RFPStatus
+from src.models.user import User
+from src.services.auth_service import get_current_user
 from src.services import rfp_service
 
 rfp_router = APIRouter(prefix="/rfp", tags=["rfp"])
@@ -75,6 +77,12 @@ class RFPArtifactOut(BaseModel):
     proposal_draft: str | None = None
     evaluation_result: dict[str, Any] | None = None
     iteration_count: int = 0
+    department_id: str | None = None
+    approval_status: str = "pending"
+    approver: str | None = None
+    approval_comment: str | None = None
+    approved_at: datetime | None = None
+    approval_iteration_count: int = 0
 
 
 class RFPTicketDetail(RFPTicketSummary):
@@ -87,6 +95,12 @@ class RFPTicketDetail(RFPTicketSummary):
     document: RFPDocumentOut | None = None
     sections: list[RFPArtifactOut] = Field(default_factory=list)
     handoff_payload: dict[str, Any] | None = None
+    final_document_available: bool = False
+
+
+class RFPDecisionIn(BaseModel):
+    decision: str = Field(..., description="approve, reject o request_changes")
+    comment: str = Field(default="", max_length=4000)
 
 
 # ── Mappers ─────────────────────────────────────────────────────────────
@@ -146,6 +160,12 @@ def _detail(
             proposal_draft=section.proposal_draft,
             evaluation_result=_parse_json(section.evaluation_result),
             iteration_count=section.iteration_count,
+            department_id=section.department_id,
+            approval_status=section.approval_status,
+            approver=section.approver,
+            approval_comment=section.approval_comment,
+            approved_at=section.approved_at,
+            approval_iteration_count=section.approval_iteration_count,
         )
         for section in sections
     ]
@@ -161,6 +181,7 @@ def _detail(
         document=document_out,
         sections=sections_out,
         handoff_payload=_parse_json(ticket.handoff_payload),
+        final_document_available=ticket.status == RFPStatus.COMPLETED.value,
     )
 
 
@@ -263,3 +284,62 @@ def get_rfp_ticket(
         raise HTTPException(status_code=404, detail={"error": f"Ticket no encontrado: {ticket_id}"})
     ticket, document, sections = bundle
     return _detail(ticket, document, sections)
+
+
+@rfp_router.post("/tickets/{ticket_id}/departments/{department_id}/decision")
+def submit_rfp_department_decision(
+    ticket_id: str,
+    department_id: str,
+    payload: RFPDecisionIn,
+    session: Session = Depends(get_sql_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Resume one department's durable graph; ownership is checked server-side."""
+    try:
+        from rfp_intake.approval import validate_decision
+        decision = validate_decision(payload.model_dump())
+        state = rfp_service.submit_department_decision(
+            session,
+            ticket_id=ticket_id,
+            department_id=department_id,
+            user_email=current_user.email,
+            decision=decision,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        logger.exception("Runtime de aprobación RFP no disponible")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="El flujo de aprobación no está disponible.") from exc
+    return {
+        "ticket_id": ticket_id,
+        "department_id": department_id,
+        "approval_status": state.get("approval_status", "pending"),
+        "iteration_count": state.get("iteration_count", 0),
+        "status": session.get(RFPTicket, ticket_id).status,
+    }
+
+
+@rfp_router.get("/tickets/{ticket_id}/final-document")
+def get_rfp_final_document(
+    ticket_id: str,
+    session: Session = Depends(get_sql_session),
+    _current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    ticket = session.get(RFPTicket, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket no encontrado.")
+    if ticket.status != RFPStatus.COMPLETED.value:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El documento final estará disponible tras todos los sign-offs y arbitrajes.")
+    document = session.get(RFPFinalDocument, ticket_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento final no encontrado.")
+    return {
+        "ticket_id": ticket_id,
+        "sections": json.loads(document.sections),
+        "currency": document.currency,
+        "generated_at": document.generated_at,
+    }

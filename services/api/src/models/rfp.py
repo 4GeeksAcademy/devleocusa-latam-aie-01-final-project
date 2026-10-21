@@ -41,6 +41,8 @@ class RFPStatus(str, Enum):
     GENERANDO_BORRADOR = "generando_borrador"
     EN_EVALUACION = "en_evaluación"
     NEEDS_HUMAN_REVIEW = "needs_human_review"
+    WAITING_APPROVAL = "esperando_aprobación"
+    COMPLETED = "terminado"
 
 
 class DepartmentKey(str, Enum):
@@ -53,6 +55,20 @@ class DepartmentKey(str, Enum):
     COMERCIAL_CUENTAS = "comercial_cuentas"              # Miguel Torres
     TECNOLOGIA = "tecnologia"                            # Andres Kim
     DIRECCION_EJECUTIVA = "direccion_ejecutiva"          # CEO
+
+
+# Canonical IDs and approvers for Hito 9. Legacy intake identifiers are retained
+# for already-created tickets and normalized at the Part 3 boundary.
+HITO9_DEPARTMENT_APPROVERS: dict[str, str] = {
+    "warehouse": "Ana Whitfield",
+    "lastmile": "Carlos Vega",
+    "reverse": "Sofía Ramos",
+}
+LEGACY_TO_HITO9_DEPARTMENT = {
+    "operaciones_almacen": "warehouse",
+    "ultima_milla_transportistas": "lastmile",
+    "logistica_inversa": "reverse",
+}
 
 
 #: Human-readable owner (contact) per department — straight from the CONTEXT.
@@ -192,5 +208,41 @@ class DepartmentSection(SQLModel, table=True):
     evaluation_result: Optional[str] = Field(default=None)
     iteration_count: int = Field(default=0, nullable=False)
 
+    #: Parte 3 human sign-off fields. Nullable defaults preserve existing rows.
+    approval_status: str = Field(default="pending", max_length=30, nullable=False)
+    approver: Optional[str] = Field(default=None, max_length=200)
+    approval_comment: Optional[str] = Field(default=None)
+    approved_at: Optional[datetime] = Field(default=None)
+    approval_iteration_count: int = Field(default=0, nullable=False)
+    department_id: Optional[str] = Field(default=None, max_length=30, index=True)
+
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class RFPFinalDocument(SQLModel, table=True):
+    """Approved proposal document stored as a DB-backed artifact."""
+
+    __tablename__ = "rfp_final_documents"
+
+    ticket_id: str = Field(primary_key=True)
+    sections: str = Field(nullable=False)
+    currency: str = Field(max_length=3, nullable=False)
+    generated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class RFPNodeTrace(SQLModel, table=True):
+    """Append-only execution trace for the independent RFP approval graph."""
+
+    __tablename__ = "rfp_node_traces"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    ticket_id: str = Field(index=True, nullable=False)
+    department_id: str = Field(max_length=30, nullable=False)
+    thread_id: str = Field(max_length=180, nullable=False, index=True)
+    sequence: int = Field(nullable=False)
+    node: str = Field(max_length=120, nullable=False)
+    agent: str = Field(max_length=200, nullable=False)
+    input: str = Field(nullable=False)
+    output: str = Field(nullable=False)
+    occurred_at: datetime = Field(nullable=False)

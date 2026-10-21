@@ -136,6 +136,8 @@ def init_db() -> None:
     )
     from src.models.rfp import (  # noqa: F401
         DepartmentSection,
+        RFPFinalDocument,
+        RFPNodeTrace,
         RFPDocument,
         RFPTicket,
     )

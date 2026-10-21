@@ -9,6 +9,8 @@ import RfpKeyAspectsCard from "../../components/rfp/RfpKeyAspectsCard";
 import {
   departmentLabel,
   getRfpTicket,
+  getRfpFinalDocument,
+  submitRfpDecision,
   type RFPTicketDetail,
 } from "../../../services/rfpApi";
 
@@ -32,6 +34,9 @@ export default function RfpTicketDetailPage() {
 
   const [ticket, setTicket] = useState<RFPTicketDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [busyDepartment, setBusyDepartment] = useState<string | null>(null);
+  const [finalDocument, setFinalDocument] = useState<{ sections: { department_id: string; text: string }[]; currency: string; generated_at: string } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!ticketId) return;
@@ -43,6 +48,33 @@ export default function RfpTicketDetailPage() {
       setError(err instanceof Error ? err.message : "No se pudo cargar el ticket.");
     }
   }, [ticketId]);
+
+  const decide = async (departmentId: string, decision: "approve" | "request_changes") => {
+    if (!ticketId) return;
+    const comment = decision === "request_changes"
+      ? window.prompt("Describe los cambios solicitados:")?.trim() ?? ""
+      : "";
+    if (decision === "request_changes" && !comment) return;
+    setBusyDepartment(departmentId);
+    setDecisionError(null);
+    try {
+      await submitRfpDecision(ticketId, departmentId, decision, comment);
+      await refresh();
+    } catch (err) {
+      setDecisionError(err instanceof Error ? err.message : "No se pudo guardar la decisión.");
+    } finally {
+      setBusyDepartment(null);
+    }
+  };
+
+  const loadFinalDocument = async () => {
+    if (!ticketId) return;
+    try {
+      setFinalDocument(await getRfpFinalDocument(ticketId));
+    } catch (err) {
+      setDecisionError(err instanceof Error ? err.message : "No se pudo cargar el documento final.");
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -68,7 +100,7 @@ export default function RfpTicketDetailPage() {
 
   // Poll while the background pipeline is still running.
   useEffect(() => {
-    if (!ticket || !["analizando", "generando_borrador", "en_evaluación"].includes(ticket.status)) return;
+    if (!ticket || !["analizando", "generando_borrador", "en_evaluación", "esperando_aprobación"].includes(ticket.status)) return;
     const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
   }, [ticket, refresh]);
@@ -138,13 +170,22 @@ export default function RfpTicketDetailPage() {
         </div>
       )}
 
+      {decisionError && <div className="mt-4 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{decisionError}</div>}
+      {ticket.final_document_available && (
+        <section className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <h2 className="font-semibold text-emerald-950">Propuesta final aprobada</h2>
+          <button type="button" onClick={() => void loadFinalDocument()} className="mt-2 rounded bg-emerald-700 px-3 py-2 text-sm font-semibold text-white">Abrir documento final</button>
+          {finalDocument && <div className="mt-4 space-y-4"><p className="text-sm">Moneda: {finalDocument.currency}</p>{finalDocument.sections.map((section) => <article key={section.department_id}><h3 className="font-semibold">{departmentLabel(section.department_id)}</h3><p className="whitespace-pre-wrap text-sm">{section.text}</p></article>)}</div>}
+        </section>
+      )}
+
       {ticket.status === "descartado" && ticket.error_detail && (
         <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <span className="font-semibold">Detalle:</span> {ticket.error_detail}
         </div>
       )}
 
-      {["analisis_completo", "generando_borrador", "en_evaluación", "needs_human_review"].includes(ticket.status) && (
+      {["analisis_completo", "generando_borrador", "en_evaluación", "needs_human_review", "esperando_aprobación"].includes(ticket.status) && (
         <>
           {doc && (
             <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -234,6 +275,14 @@ export default function RfpTicketDetailPage() {
                       </p>
                     )}
 
+                    {section.department_id && (
+                      <div className="mb-3 rounded border border-indigo-100 bg-indigo-50 p-3 text-sm">
+                        <p><span className="font-semibold">Aprobador:</span> {section.approver} · <span className="font-semibold">Estado:</span> {section.approval_status}</p>
+                        <p className="text-xs text-slate-600">Revisiones humanas: {section.approval_iteration_count}/3</p>
+                        {section.approval_comment && <p className="mt-1">Comentario: {section.approval_comment}</p>}
+                      </div>
+                    )}
+
                     {section.worker_error && (
                       <p className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
                         {section.worker_error}
@@ -258,6 +307,12 @@ export default function RfpTicketDetailPage() {
                               <li>Cumplimiento: {section.evaluation_result.compliance.pass ? "aprobado" : `reglas ${section.evaluation_result.compliance.rule_ids.join(", ")}`}</li>
                             </ul>
                             {!section.evaluation_result.overall_pass && <p className="mt-2 text-rose-800">{section.evaluation_result.feedback_for_generator}</p>}
+                          </div>
+                        )}
+                        {section.department_id && section.approval_status === "pending" && ticket.status === "esperando_aprobación" && (
+                          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-3">
+                            <button type="button" disabled={busyDepartment === section.department_id} onClick={() => void decide(section.department_id!, "approve")} className="rounded bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Aprobar sección</button>
+                            <button type="button" disabled={busyDepartment === section.department_id} onClick={() => void decide(section.department_id!, "request_changes")} className="rounded border border-amber-500 px-3 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50">Solicitar cambios</button>
                           </div>
                         )}
                       </div>

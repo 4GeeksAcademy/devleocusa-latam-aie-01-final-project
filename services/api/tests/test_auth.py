@@ -195,21 +195,17 @@ class TestGetCurrentUser:
         assert result.email == "qa@trackflow.io"
         assert result.id == user.id
 
-    def test_inactive_user_still_returns_user(self, test_user, auth_token):
-        """Boundary: is_active=False — currently NOT checked by get_current_user.
-
-        This test verifies the *current* behaviour so any future change
-        that adds an is_active guard will break this test intentionally.
-        """
+    def test_inactive_user_is_rejected(self, test_user, auth_token):
+        """Inactive users must not retain access through an otherwise-valid JWT."""
         from src.database import get_users_table
+        from fastapi import HTTPException
 
         # Manually deactivate the user in the DB
         user, _ = test_user
         get_users_table().update({"is_active": False}, doc_ids=[user.id])
-        result = get_current_user(auth_token)
-        assert result is not None
-        assert result.email == "qa@trackflow.io"
-        assert result.is_active is False
+        with pytest.raises(HTTPException) as exc_info:
+            get_current_user(auth_token)
+        assert exc_info.value.status_code == 401
 
     def test_expired_token_raises_401(self, expired_token):
         """Failure: expired token → HTTPException 401."""

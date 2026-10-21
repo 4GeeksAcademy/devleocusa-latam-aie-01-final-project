@@ -17,6 +17,9 @@ from .agents.llm import chat_json
 MAX_ITERATIONS = 3
 
 DEPARTMENT_INSTRUCTIONS: dict[str, str] = {
+    "warehouse": "Redacta capacidad de almacenamiento, costo por pallet/SKU y tiempo de onboarding. Usa la moneda del cliente.",
+    "lastmile": "Redacta costo por envío, transportistas disponibles según destino y SLA de entrega. No reveles tarifas negociadas de carriers.",
+    "reverse": "Redacta costo y tiempo de procesamiento de devoluciones; nunca prometas turnaround inferior a 48 horas.",
     "operaciones_almacen": "Redacta la sección de almacenaje, recepción, inventario, picking, packing e integración de pedidos.",
     "ultima_milla_transportistas": "Redacta la sección de transporte, selección de carrier, tracking y entregas.",
     "logistica_inversa": "Redacta la sección de devoluciones, inspección, etiquetas y logística inversa.",
@@ -181,6 +184,30 @@ def generate_department_section(department: str, workstream: dict[str, Any], sum
     except KeyError as exc:
         raise ValueError(f"Departamento no soportado: {department}") from exc
     return generator.generate(workstream, summary, feedback)
+
+
+_HITO9_TO_LEGACY = {
+    "warehouse": "operaciones_almacen",
+    "lastmile": "ultima_milla_transportistas",
+    "reverse": "logistica_inversa",
+}
+
+
+def generate_hito9_section(department: str, workstream: dict[str, Any], summary: str = "", feedback: str = "") -> str:
+    """Generate one canonical Hito 9 department using the compatible legacy agents."""
+    legacy_id = _HITO9_TO_LEGACY.get(department)
+    if legacy_id is None:
+        raise ValueError(f"Departamento Hito 9 no soportado: {department}")
+    return generate_department_section(legacy_id, {**workstream, "department": legacy_id}, summary, feedback)
+
+
+def evaluate_hito9_section(department: str, draft: str, aspects: dict[str, Any]) -> dict[str, Any]:
+    legacy_id = _HITO9_TO_LEGACY.get(department)
+    if legacy_id is None:
+        raise ValueError(f"Departamento Hito 9 no soportado: {department}")
+    result = evaluate_section(legacy_id, draft, aspects)
+    result["department_id"] = department
+    return result
 
 
 async def run_section_cycle(

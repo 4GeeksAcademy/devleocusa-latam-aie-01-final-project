@@ -77,4 +77,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     if user is None:
         raise unauthorized_exception
 
+    if not user.is_active:
+        raise unauthorized_exception
+
     return user
