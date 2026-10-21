@@ -29,8 +29,14 @@ from .agents.synthesizer import synthesize_sections
 from .agents.worker import process_workstream
 
 
-def _classifier_node(state: RFPIntakeState) -> dict[str, Any]:
+def _classifier_node(
+    state: RFPIntakeState, on_classified: Any = None
+) -> dict[str, Any]:
     decision = classify_document(state.markdown, state.metadata)
+    if decision.is_rfp and on_classified is not None:
+        on_classified(
+            state.ticket_id, state.metadata, list(decision.detected_departments)
+        )
     error = None
     if not decision.is_rfp and decision.confidence < LOW_CONFIDENCE_THRESHOLD:
         # D3 — false negatives must not disappear silently: annotate the
@@ -100,11 +106,14 @@ def _synthesizer_node(state: RFPIntakeState) -> dict[str, Any]:
     return {"synthesis": synthesis}
 
 
-def build_graph():
+def build_graph(*, on_classified: Any = None):
     """Compose and return the compiled rfp_intake graph."""
     graph = StateGraph(RFPIntakeState)
 
-    graph.add_node("classifier", _classifier_node)
+    graph.add_node(
+        "classifier",
+        lambda state: _classifier_node(state, on_classified=on_classified),
+    )
     graph.add_node("orchestrator", _orchestrator_node)
     graph.add_node("worker", _worker_node)
     graph.add_node("synthesizer", _synthesizer_node)

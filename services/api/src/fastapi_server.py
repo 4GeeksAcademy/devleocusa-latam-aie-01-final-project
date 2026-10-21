@@ -26,6 +26,7 @@ from telemetry.router import router as telemetry_router
 from reporting.router import router as reporting_router
 from src.routes.knowledge_router import knowledge_router
 from src.routes.rfp_router import rfp_router
+from src.services.rfp_event_service import rfp_event_broker
 
 
 @asynccontextmanager
@@ -33,9 +34,13 @@ async def lifespan(_app: FastAPI):
     """Create SQLModel tables in Supabase on startup."""
     load_env_if_available()
     init_db()
-    async with agent_graph_runtime() as agent_graph:
-        _app.state.agent_graph = agent_graph
-        yield
+    await rfp_event_broker.start()
+    try:
+        async with agent_graph_runtime() as agent_graph:
+            _app.state.agent_graph = agent_graph
+            yield
+    finally:
+        await rfp_event_broker.stop()
 
 
 app = FastAPI(title="TrackFlow Auth API", lifespan=lifespan)

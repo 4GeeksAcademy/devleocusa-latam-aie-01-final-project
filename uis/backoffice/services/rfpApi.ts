@@ -1,4 +1,4 @@
-import { apiFetch } from "./authApi";
+import { apiFetch, getSessionToken } from "./authApi";
 
 // Types mirroring the FastAPI schemas in services/api/src/routes/rfp_router.py
 
@@ -26,6 +26,82 @@ export interface RFPTicketSummary {
   updated_at: string;
   classification_reason: string | null;
   error_detail: string | null;
+}
+
+/** Flat data payload for the named ``rfp_ticket_created`` SSE event. */
+export interface RfpTicketCreatedEvent {
+  ticket_id: string;
+  rfp_id: string | null;
+  client_name: string | null;
+  client_country: string | null;
+  services_requested: string[];
+  status: "analyzing";
+  created_at: string;
+}
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
+/** Connect to the authenticated event stream and consume named SSE frames. */
+export async function streamRfpTicketEvents(
+  onTicketCreated: (event: RfpTicketCreatedEvent) => void,
+  signal: AbortSignal,
+  onConnected?: () => void | Promise<void>,
+): Promise<void> {
+  const token = getSessionToken();
+  if (!token) throw new Error("No hay una sesión autenticada para SSE.");
+
+  const response = await fetch(`${API_BASE_URL}/rfp/events`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "text/event-stream" },
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw new Error(`SSE respondió ${response.status}.`);
+  if (!response.body) throw new Error("El servidor no abrió el stream SSE.");
+  await onConnected?.();
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+  let dataLines: string[] = [];
+
+  const dispatch = () => {
+    if (currentEvent === "rfp_ticket_created" && dataLines.length > 0) {
+      const payload = JSON.parse(dataLines.join("\n")) as RfpTicketCreatedEvent;
+      if (
+        typeof payload.ticket_id === "string" &&
+        payload.status === "analyzing" &&
+        Array.isArray(payload.services_requested)
+      ) onTicketCreated(payload);
+    }
+    currentEvent = "";
+    dataLines = [];
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        for (const line of frame.split("\n")) {
+          if (line.startsWith(":")) continue;
+          const colon = line.indexOf(":");
+          const field = colon < 0 ? line : line.slice(0, colon);
+          const valueText = colon < 0 ? "" : line.slice(colon + 1).replace(/^ /, "");
+          if (field === "event") currentEvent = valueText;
+          else if (field === "data") dataLines.push(valueText);
+        }
+        dispatch();
+        boundary = buffer.indexOf("\n\n");
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
 }
 
 export interface RFPDocumentOut {

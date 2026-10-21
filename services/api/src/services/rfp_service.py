@@ -40,6 +40,7 @@ from src.models.rfp import (
     LEGACY_TO_HITO9_DEPARTMENT,
 )
 from src.services.user_service import get_user_by_email
+from src.services.rfp_event_service import RFP_TICKET_CREATED, rfp_event_broker
 
 logger = logging.getLogger(__name__)
 
@@ -159,10 +160,56 @@ def process_ticket(ticket_id: str) -> None:
         pdf_path = Path(ticket.pdf_path)
 
     try:
+        def notify_classified(
+            classified_ticket_id: str,
+            metadata: dict[str, Any],
+            departments: list[str],
+        ) -> None:
+            # The classifier callback runs only for a positive RFP decision.
+            # Supabase remains authoritative; this is a transient notification.
+            try:
+                normalized = metadata or {}
+                extra = normalized.get("extra") or {}
+                if not isinstance(extra, dict):
+                    extra = {}
+
+                def known_value(*values: Any) -> Any:
+                    return next(
+                        (value for value in values if value not in (None, "")),
+                        None,
+                    )
+
+                # Only use fields explicitly extracted as the same domain
+                # field. In particular, issuing_organization is not assumed
+                # to be client_name, and rfp_reference is not an internal ID.
+                rfp_event_broker.publish({
+                    "event": RFP_TICKET_CREATED,
+                    "data": {
+                        "ticket_id": classified_ticket_id,
+                        "rfp_id": known_value(normalized.get("rfp_id"), extra.get("rfp_id")),
+                        "client_name": known_value(normalized.get("client_name"), extra.get("client_name")),
+                        "client_country": known_value(normalized.get("client_country"), extra.get("client_country")),
+                        "services_requested": list(departments),
+                        "status": "analyzing",
+                        "created_at": ticket_created_at.isoformat(),
+                    },
+                })
+            except Exception:
+                # Transient delivery must never turn a positive classification
+                # into a failed intake run; the persisted Supabase row is truth.
+                logger.exception("No se pudo publicar evento SSE para ticket %s", classified_ticket_id)
+
+        with Session(get_engine()) as session:
+            persisted_ticket = session.get(RFPTicket, ticket_id)
+            ticket_created_at = (
+                persisted_ticket.created_at if persisted_ticket is not None else _utcnow()
+            )
+
         result = pipeline_adapter.run_pipeline(
             ticket_id=ticket_id,
             pdf_path=pdf_path,
             artifacts_dir=_ticket_dir(ticket_id),
+            on_classified=notify_classified,
         )
     except Exception as exc:  # infra failure (LLM down, disk, ...) — never hang
         logger.exception("RFP ticket %s fallo el pipeline", ticket_id)

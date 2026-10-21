@@ -7,7 +7,9 @@ import Link from "next/link";
 import RfpStatusBadge from "../components/rfp/RfpStatusBadge";
 import {
   listRfpTickets,
+  streamRfpTicketEvents,
   uploadRfp,
+  type RfpTicketCreatedEvent,
   type RFPTicketSummary,
   type RFPStatus,
 } from "../../services/rfpApi";
@@ -27,12 +29,19 @@ export default function RfpIntakePage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<"connecting" | "connected" | "reconnecting">("connecting");
+  const [newTicketIds, setNewTicketIds] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const filterRef = useRef(filter);
+  const seenTicketIds = useRef(new Set<string>());
+
+  useEffect(() => { filterRef.current = filter; }, [filter]);
 
   const refresh = useCallback(async () => {
     try {
       const data = await listRfpTickets(filter);
-      setTickets(data);
+      for (const ticket of data) seenTicketIds.current.add(ticket.id);
+      setTickets((current) => mergeTickets(current, data, filter));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar tickets.");
@@ -48,7 +57,8 @@ export default function RfpIntakePage() {
       try {
         const data = await listRfpTickets(filter);
         if (cancelled) return;
-        setTickets(data);
+        for (const ticket of data) seenTicketIds.current.add(ticket.id);
+        setTickets((current) => mergeTickets(current, data, filter));
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -63,6 +73,76 @@ export default function RfpIntakePage() {
       cancelled = true;
     };
   }, [filter]);
+
+  // Recover once before the initial connection and before every reconnect.
+  // This closes the list-load/stream-subscribe race and covers Redis Pub/Sub gaps.
+  useEffect(() => {
+    let stopped = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    let failures = 0;
+
+    const onTicketCreated = (event: RfpTicketCreatedEvent) => {
+      const id = event.ticket_id;
+      if (!id || seenTicketIds.current.has(id)) return;
+      seenTicketIds.current.add(id);
+      const ticket: RFPTicketSummary = {
+        id,
+        status: "analizando",
+        original_filename: `Nueva RFP: ${event.client_name || id}`,
+        created_at: event.created_at,
+        updated_at: event.created_at,
+        classification_reason: null,
+        error_detail: null,
+      };
+      setTickets((current) => mergeTickets(current, [ticket], filterRef.current));
+      setNewTicketIds((current) => [id, ...current.filter((item) => item !== id)]);
+      setNotice(`Nueva RFP recibida: ${event.client_name || id} — requiere procesamiento.`);
+    };
+
+    const connect = async (recover: boolean) => {
+      if (stopped) return;
+      controller = new AbortController();
+      setConnectionState(recover ? "reconnecting" : "connecting");
+      try {
+        await streamRfpTicketEvents(onTicketCreated, controller.signal, async () => {
+          failures = 0;
+          setConnectionState("connected");
+          // The request is already subscribed. Snapshot now to close the
+          // initial-load/reconnect race; SSE frames are consumed immediately
+          // after this callback resolves and are deduplicated by ticket id.
+          try {
+            const recovered = await listRfpTickets(filterRef.current);
+            if (stopped) return;
+            for (const ticket of recovered) seenTicketIds.current.add(ticket.id);
+            setTickets((current) => mergeTickets(current, recovered, filterRef.current));
+            setError(null);
+          } catch {
+            // Continue receiving live events even if the recovery request fails.
+          }
+        });
+        if (!stopped) throw new Error("El stream SSE terminó inesperadamente.");
+      } catch {
+        if (stopped) return;
+        failures += 1;
+        setConnectionState("reconnecting");
+        const delay = Math.min(1000 * 2 ** (failures - 1), 30000);
+        retryTimer = setTimeout(() => void connect(true), delay);
+        return;
+      }
+      if (!stopped) {
+        failures = 0;
+        setConnectionState("connected");
+      }
+    };
+
+    void connect(false);
+    return () => {
+      stopped = true;
+      controller?.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, []);
 
   // Keep the list fresh while any ticket is still being analyzed.
   const hasPending = tickets.some((ticket) => ticket.status === "analizando");
@@ -112,6 +192,10 @@ export default function RfpIntakePage() {
           Markdown, clasifica si es una RFP real y descompone el trabajo por
           departamento para Ventas.
         </p>
+      </div>
+
+      <div className={`mb-4 rounded-lg border px-4 py-2 text-xs ${connectionState === "connected" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`} role="status">
+        {connectionState === "connected" ? "Notificaciones en tiempo real conectadas" : connectionState === "reconnecting" ? "Conexión SSE interrumpida; reconectando y recuperando tickets…" : "Conectando notificaciones en tiempo real…"}
       </div>
 
       <form onSubmit={handleUpload} className="mb-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -186,7 +270,7 @@ export default function RfpIntakePage() {
             <li key={ticket.id}>
               <Link
                 href={`/rfp/${ticket.id}`}
-                className="block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-sky-300 hover:shadow"
+                className={`block rounded-xl border p-4 shadow-sm transition hover:border-sky-300 hover:shadow ${newTicketIds.includes(ticket.id) ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-100" : "border-slate-200 bg-white"}`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-semibold text-slate-800">
@@ -209,4 +293,16 @@ export default function RfpIntakePage() {
       )}
     </div>
   );
+}
+
+function mergeTickets(
+  current: RFPTicketSummary[],
+  incoming: RFPTicketSummary[],
+  activeFilter?: RFPStatus,
+): RFPTicketSummary[] {
+  const merged = new Map(current.map((ticket) => [ticket.id, ticket]));
+  for (const ticket of incoming) {
+    if (!activeFilter || ticket.status === activeFilter) merged.set(ticket.id, ticket);
+  }
+  return [...merged.values()].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
 }
