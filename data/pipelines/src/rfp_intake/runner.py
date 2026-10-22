@@ -65,7 +65,13 @@ def _build_handoff(
     }
 
 
-def run_pipeline(ticket_id: str, pdf_path: Path, artifacts_dir: Path | None = None) -> IntakeResult:
+def run_pipeline(
+    ticket_id: str,
+    pdf_path: Path,
+    artifacts_dir: Path | None = None,
+    *,
+    on_classified: Any = None,
+) -> IntakeResult:
     """Run the full intake pipeline for one uploaded PDF.
 
     Never raises for document-level problems: a broken PDF or a rejection both
@@ -93,7 +99,7 @@ def run_pipeline(ticket_id: str, pdf_path: Path, artifacts_dir: Path | None = No
     readability = compute_readability(markdown).to_dict()
 
     # ── 3. Graph: classifier → orchestrator → workers → synthesizer ─────
-    graph = build_graph()
+    graph = build_graph(on_classified=on_classified)
     final_state = graph.invoke(
         {
             "ticket_id": ticket_id,

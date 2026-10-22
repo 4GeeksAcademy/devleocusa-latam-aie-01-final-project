@@ -11,6 +11,11 @@ La suite específica cubre extracción incremental del `answer`, publicación pu
 
 # Guía de Pruebas - TrackFlow Tech
 
+## Notificaciones RFP en tiempo real
+* Endpoint autenticado, headers SSE, nombre de evento y payload: `cd services/api && uv run pytest tests/test_rfp_sse.py -v`.
+* Fan-out Redis Pub/Sub entre dos instancias: `cd services/api && uv run pytest tests/test_rfp_event_broker.py -v`.
+* Recuperación tras desconexión y prueba manual del dashboard: seguir `docs/rfp-realtime-notifications.md`.
+
 Este documento define la estrategia de pruebas unitarias para nuestros sistemas, garantizando la fiabilidad de las operaciones logísticas y de usuario.
 
 ## 1. Módulo de Autenticación (AUTH-088)
