@@ -1,6 +1,14 @@
 # Progress
 Integración de MCP con su OAUTH terminada y testeada.
 
+## Chat WebSocket en tiempo real — Parte 2 (2026-10-22, rama feature/websocket-chat)
+- Implementado `WebSocket /chat/ws/{session_id}?token=<JWT>` en `services/api/src/routes/chat_router.py`, reutilizando JWT y el agente existente `first_line_cx` vía `invoke_agent`; `session_id` se conserva también como `run_id`/LangGraph `thread_id`.
+- Generación de chat en modo stream con parser incremental del campo JSON `answer` (sin emitir `proposal`), mensajes/eventos estructurados y pub/sub en memoria por sesión. Sesiones e historial, estado del mensaje y watermark `sequence` se guardan en TinyDB. La UI `/knowledge` consume chunks, reintenta conexión y rehidrata el parcial streaming mediante snapshot + `replace`.
+- Interrupción cooperativa: se señala cancelación, se solicita cerrar el stream activo y se espera a que la generación anterior se detenga antes de marcar el parcial `interrupted` e iniciar la redirección. No usa `LangGraph interrupt()`/HITL. La cancelación confirmada por tests es con generador controlable; falta validar si el proveedor configurado termina inmediatamente el cómputo remoto tras `close()`.
+- Respuestas de diseño: WebSocket por bidireccionalidad; un productor/pub-sub por sesión para consumidores múltiples; JWT y propiedad validados antes del snapshot; TinyDB para rehidratación local y checkpointer PostgreSQL existente para estado LangGraph; pub/sub en memoria solo soporta un proceso (Redis/backplane necesario para réplicas); `client_id=user_id` provisional porque no existe entidad Client explícita.
+- Documentación: `docs/real-time-chat.md` contiene contrato, decisiones de diseño, instrucciones manuales de streaming/interrupción/reconexión/auth y limitaciones. `TESTING.md` incluye comandos y alcance real de pruebas; `trackflow-REAL-TIME.es.md` enlaza la implementación.
+- Validación: `cd services/api && pytest tests/test_chat_pubsub.py tests/test_chat_websocket.py tests/test_auth.py -q` — 101 passed; `python -m compileall -q src/routes/chat_router.py src/agent/memory_generation.py` pasó. Backoffice: `npm run lint && npm run build` pasó. Suite completa API: 296 passed, 1 fallo ambiental preexistente en `test_llm_classifier_parses_a_typed_tool_decision` por expectativa `https://api.openai.com/v1` frente a `https://llm.4geeks.ai` configurado en el entorno.
+
 ## Harness de seguridad del agente (2026-10-10)
 - Se endureció el mismo agente LangGraph `trackflow-knowledge-agent` de CX, preservando RAG, MCP y memoria por usuario; no se creó un agente alternativo.
 - Guardrail local determinista bloquea patrones conocidos de jailbreak y tareas personales antes de routing. El clasificador estructurado reutilizado del router tipa consultas como `trackflow`, `casual`, `personal`, `out_of_scope` o `instruction_override`; exige `scope` explícito y solo permite seleccionar fuentes para `trackflow`.

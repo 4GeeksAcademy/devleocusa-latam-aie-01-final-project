@@ -65,19 +65,22 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     )
 
     try:
+        return get_user_from_token(token)
+    except ValueError as exc:
+        raise unauthorized_exception from exc
+
+
+def get_user_from_token(token: str) -> User:
+    """Validate an API JWT and resolve its active user (HTTP or WebSocket)."""
+    try:
         payload = jwt.decode(token, _get_secret_key(), algorithms=[_get_algorithm()])
     except (ExpiredSignatureError, JWTError) as exc:
-        raise unauthorized_exception from exc
+        raise ValueError("Invalid or expired access token") from exc
 
     subject = payload.get("sub")
     if subject is None:
-        raise unauthorized_exception
-
+        raise ValueError("Access token has no subject")
     user = get_user_by_id(subject)
-    if user is None:
-        raise unauthorized_exception
-
-    if not user.is_active:
-        raise unauthorized_exception
-
+    if user is None or not user.is_active:
+        raise ValueError("Access token user is unavailable")
     return user

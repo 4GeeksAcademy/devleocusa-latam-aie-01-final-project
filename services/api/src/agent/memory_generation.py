@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Callable
+from contextvars import ContextVar
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Any
@@ -11,6 +13,15 @@ from openai import OpenAI
 
 from src.agent.memory_models import MemoryDecisionResult
 from src.agent.state import MemoryGeneration
+
+stream_callback_context: ContextVar[Callable[[str], None] | None] = ContextVar(
+    "agent_stream_callback", default=None
+)
+stream_cancel_context: ContextVar[Any | None] = ContextVar("agent_stream_cancel", default=None)
+stream_control_context: ContextVar[dict[str, Any] | None] = ContextVar(
+    "agent_stream_control", default=None
+)
+stream_context_explicit: ContextVar[bool] = ContextVar("agent_stream_context_explicit", default=False)
 
 
 def generate_casual_answer(question: str) -> str | None:
@@ -56,9 +67,20 @@ def generate_casual_answer(question: str) -> str | None:
 
 
 def generate_answer_and_proposal(
-    question: str, evidence: list[dict[str, Any]], memories: list[str] | None = None
+    question: str,
+    evidence: list[dict[str, Any]],
+    memories: list[str] | None = None,
+    stream_callback: Callable[[str], None] | None = None,
 ) -> MemoryGeneration:
     """One generation call returns the user-facing answer and an optional proposal."""
+    explicit_stream = stream_context_explicit.get()
+    stream_callback = (
+        stream_callback
+        if stream_callback is not None
+        else (stream_callback_context.get() if explicit_stream else None)
+    )
+    stream_cancel = stream_cancel_context.get() if explicit_stream else None
+    stream_control = stream_control_context.get() if explicit_stream else None
     client = OpenAI(
         api_key=os.getenv("GENERATION_API_KEY") or os.getenv("OPENAI_API_KEY"),
         base_url=os.getenv("GENERATION_BASE_URL", "https://api.openai.com/v1"),
@@ -84,6 +106,7 @@ def generate_answer_and_proposal(
         response_format={"type": "json_object"},
         temperature=0.3,
         max_tokens=1200,
+        stream=stream_callback is not None,
         messages=[
             {
                 "role": "system",
@@ -137,10 +160,88 @@ def generate_answer_and_proposal(
             },
         ],
     )
-    content = response.choices[0].message.content
+    if stream_callback is None:
+        content = response.choices[0].message.content
+    else:
+        pieces: list[str] = []
+        answer_stream = _JsonAnswerStream(stream_callback)
+        if stream_control is not None:
+            stream_control["close_stream"] = response.close
+        try:
+            for event in response:
+                if stream_cancel is not None and stream_cancel.is_set():
+                    break
+                delta = event.choices[0].delta.content if event.choices else None
+                if delta:
+                    pieces.append(delta)
+                    answer_stream.feed(delta)
+        finally:
+            if stream_control is not None:
+                stream_control["close_stream"] = None
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+        content = "".join(pieces)
+        if stream_cancel is not None and stream_cancel.is_set():
+            # The assistant turn is intentionally abandoned after an abort;
+            # avoid parsing an incomplete JSON object as a model failure.
+            return MemoryGeneration(answer="")
     if not content:
         raise ValueError("El modelo no devolvió respuesta estructurada.")
     return MemoryGeneration.model_validate(json.loads(content))
+
+
+class _JsonAnswerStream:
+    """Extract and unescape the answer JSON string as structured output arrives."""
+
+    def __init__(self, callback: Callable[[str], None]) -> None:
+        self.callback = callback
+        self.buffer = ""
+        self.started = False
+        self.escaped = False
+        self.unicode_remaining = 0
+        self.unicode_buffer = ""
+
+    def feed(self, chunk: str) -> None:
+        self.buffer += chunk
+        if not self.started:
+            marker = re.search(r'"answer"\s*:\s*"', self.buffer)
+            if not marker:
+                return
+            self.buffer = self.buffer[marker.end():]
+            self.started = True
+        output: list[str] = []
+        consumed = 0
+        for character in self.buffer:
+            consumed += 1
+            if self.unicode_remaining:
+                self.unicode_buffer += character
+                self.unicode_remaining -= 1
+                if not self.unicode_remaining:
+                    try:
+                        output.append(chr(int(self.unicode_buffer, 16)))
+                    except ValueError:
+                        pass
+                    self.unicode_buffer = ""
+                continue
+            if self.escaped:
+                self.escaped = False
+                if character == "u":
+                    self.unicode_remaining = 4
+                    continue
+                output.append({"n": "\n", "r": "\r", "t": "\t", '"': '"', "\\": "\\", "/": "/"}.get(character, character))
+                continue
+            if character == "\\":
+                self.escaped = True
+            elif character == '"':
+                self.buffer = ""
+                break
+            else:
+                output.append(character)
+        else:
+            self.buffer = ""
+        if output:
+            self.callback("".join(output))
 
 
 def classify_pending_decision(proposal: str, message: str) -> dict[str, str | None]:

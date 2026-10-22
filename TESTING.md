@@ -1,3 +1,14 @@
+# Chat en tiempo real (Parte 2)
+
+Pruebas backend específicas:
+
+```bash
+cd services/api
+pytest tests/test_chat_pubsub.py tests/test_chat_websocket.py tests/test_auth.py -q
+```
+
+La suite específica cubre extracción incremental del `answer`, publicación pub/sub, autenticación/snapshot, rehidratación del parcial en un WebSocket reconectado, persistencia del texto parcial y orden de parada antes del turno redirigido. Para la verificación manual de streaming de tokens e interrupción con el proveedor configurado, seguir [docs/real-time-chat.md](docs/real-time-chat.md); las pruebas automatizadas no garantizan que un proveedor externo detenga inmediatamente el cómputo remoto al cerrar el stream.
+
 # Guía de Pruebas - TrackFlow Tech
 
 Este documento define la estrategia de pruebas unitarias para nuestros sistemas, garantizando la fiabilidad de las operaciones logísticas y de usuario.

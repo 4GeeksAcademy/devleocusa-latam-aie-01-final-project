@@ -37,6 +37,8 @@ stock_movements_table = db.table("stock_movements")
 stock_reservations_table = db.table("stock_reservations")
 carriers_table = db.table("carriers")
 carrier_assignments_table = db.table("carrier_assignments")
+chat_sessions_table = db.table("chat_sessions")
+chat_messages_table = db.table("chat_messages")
 
 
 def get_db() -> TinyDB:
@@ -87,6 +89,16 @@ def get_carriers_table() -> Table:
 def get_carrier_assignments_table() -> Table:
     """Return the carrier assignments table handle."""
     return carrier_assignments_table
+
+
+def get_chat_sessions_table() -> Table:
+    """Return durable local chat session records."""
+    return chat_sessions_table
+
+
+def get_chat_messages_table() -> Table:
+    """Return durable local chat message records."""
+    return chat_messages_table
 
 
 # ─────────────────────────────────────────────────────────────────────────
