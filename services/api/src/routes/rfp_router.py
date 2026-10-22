@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import json
 import logging
+import asyncio
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
@@ -26,6 +27,7 @@ from src.models.rfp import DepartmentSection, RFPFinalDocument, RFPTicket, RFPSt
 from src.models.user import User
 from src.services.auth_service import get_current_user
 from src.services import rfp_service
+from src.services.rfp_event_service import rfp_event_broker
 
 rfp_router = APIRouter(prefix="/rfp", tags=["rfp"])
 logger = logging.getLogger(__name__)
@@ -186,6 +188,45 @@ def _detail(
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────
+
+
+@rfp_router.get("/events", summary="Notificaciones en tiempo real de RFP")
+async def rfp_events(
+    _current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Stream classified RFP tickets; clients recover missed items from Supabase."""
+    async def event_stream():
+        subscriber = await rfp_event_broker.subscribe()
+        try:
+            while True:
+                connection_generation = rfp_event_broker.connection_generation
+                if rfp_event_broker.should_reconnect_sse:
+                    # The client reconnect path refetches the durable Supabase
+                    # ticket list before opening another stream.
+                    return
+                try:
+                    event = await asyncio.wait_for(
+                        subscriber.queue.get(), timeout=15
+                    )
+                except TimeoutError:
+                    if rfp_event_broker.connection_generation != connection_generation:
+                        return
+                    yield ": keep-alive\n\n"
+                    continue
+                payload = json.dumps(event["data"], ensure_ascii=False, separators=(",", ":"))
+                yield f"event: {event['event']}\ndata: {payload}\n\n"
+        finally:
+            await rfp_event_broker.unsubscribe(subscriber)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @rfp_router.post(

@@ -32,9 +32,17 @@ def _runner_module() -> ModuleType:
     )
 
 
-def run_pipeline(ticket_id: str, pdf_path: Path, artifacts_dir: Path | None = None) -> Any:
-    """Execute the full intake pipeline for one ticket. Returns an IntakeResult."""
-    return _runner_module().run_pipeline(ticket_id, pdf_path, artifacts_dir)
+def run_pipeline(
+    ticket_id: str,
+    pdf_path: Path,
+    artifacts_dir: Path | None = None,
+    *,
+    on_classified: Any = None,
+) -> Any:
+    """Execute the intake pipeline for one ticket and optionally observe classification."""
+    return _runner_module().run_pipeline(
+        ticket_id, pdf_path, artifacts_dir, on_classified=on_classified
+    )
 
 
 def status_descartado() -> str:
