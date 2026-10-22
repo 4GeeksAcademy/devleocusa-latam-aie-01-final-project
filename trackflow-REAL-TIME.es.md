@@ -1,6 +1,6 @@
 # BRIEFING — TrackFlow: Sistemas en Tiempo Real (Parte 2)
 
-> **Implementación y verificación:** la solución de este briefing está implementada en el backend y el backoffice. Consulta [docs/real-time-chat.md](docs/real-time-chat.md) para el contrato WebSocket, las respuestas a las Preguntas de Diseño y los pasos para probar streaming incremental, interrupción/redirección, reconexión y autenticación.
+> **Implementación y verificación:** la solución de este briefing está implementada en el backend y el backoffice. La descripción del PR resume el contrato WebSocket, las decisiones de diseño y cómo probar streaming incremental, interrupción/redirección, reconexión y autenticación.
 
 > Da por hecho que tu agente de soporte ya existe y funciona — aquí no se rediseña el agente, solo el canal por el que habla con el usuario.
 
