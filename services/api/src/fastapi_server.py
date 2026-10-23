@@ -26,6 +26,7 @@ from telemetry.router import router as telemetry_router
 from reporting.router import router as reporting_router
 from src.routes.knowledge_router import knowledge_router
 from src.routes.rfp_router import rfp_router
+from src.routes.chat_router import chat_router
 from src.services.rfp_event_service import rfp_event_broker
 
 
@@ -66,6 +67,7 @@ app.include_router(reports_router)
 app.include_router(reporting_router)
 app.include_router(knowledge_router)
 app.include_router(rfp_router)
+app.include_router(chat_router)
 
 # Telemetry event ingestion — prefix configurable via TELEMETRY_ENDPOINT
 _telemetry_prefix = os.getenv("TELEMETRY_ENDPOINT", "/telemetry").rstrip("/")

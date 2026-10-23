@@ -1,5 +1,14 @@
 # Technical Context
 
+## Chat en tiempo real (Parte 2)
+- FastAPI endpoint `WebSocket /chat/ws/{session_id}?token=<JWT>` en `services/api/src/routes/chat_router.py`; autenticación comparte `get_user_from_token` con API y rechaza sesión inválida/no propia antes de aceptar. `agent_id="first_line_cx"`; `session_id` es `run_id` y `thread_id` LangGraph.
+- Stream solo en el contexto explícito del chat, con ContextVars de callback/cancel/control en `services/api/src/agent/memory_generation.py`; `_JsonAnswerStream` publica incrementalmente `answer` del JSON, no `proposal`. Una generación se ejecuta por sesión y eventos se distribuyen a sockets suscritos con `services/api/src/services/chat_pubsub.py` (async queues, proceso único).
+- TinyDB (`chat_sessions`, `chat_messages`) es el store para snapshot/historial conversacional y persiste `status`/`sequence`; LangGraph conserva su checkpointer PostgreSQL de producción. No confundir recuperación del texto conversacional con reconstrucción semántica durable si el runtime carece de checkpointer.
+- Interrupción: evento `interrupt_requested`; threading cancellation event, `response.close()` cuando existe, drenaje/persistencia de texto parcial, `generation_interrupted` y barrera de terminación antes de inicio de turno siguiente. No utilizar LangGraph `interrupt()` para cortar generación. Tests controlan el proveedor fake y no certifican abort remoto externo.
+- Frontend `uis/backoffice/app/knowledge/page.tsx`: WebSocket nativo, token API en query (no registrar URL/token), session id en localStorage, retry exponencial, snapshot; un resume parcial usa `token_chunk` con `replace: true` y watermark para deduplicar chunks.
+- Eventos públicos: entrada `user_message`, `interrupt_requested`; salida `session_snapshot`, `user_message`, `interrupt_requested`, `token_chunk`, `generation_interrupted`, `generation_completed`, `chat_error`. Redis/backplane será necesario con múltiples procesos. `client_id` actualmente copia `user_id`, pues no hay modelo de Client distinto.
+- Descripción de diseño y prueba manual resumida en el PR; pruebas automatizadas en `services/api/tests/test_chat_websocket.py` y `test_chat_pubsub.py`. Targeted API/auth 101 passed; Next lint/build passed. Suite API completa tiene un fallo preexistente de expectativa de base_url según `.env` (`api.openai.com` esperado vs `llm.4geeks.ai`).
+
 ## Política de memoria del agente
 - Seguir `MEMORY-trackflow.es.md` (no la allowlist provisional del briefing): reglas de carrier corregidas; contexto de incidencias con patrón repetible; preferencias de reportes para clientes B2B recurrentes.
 - No persistir direcciones ni ubicaciones sensibles B2B/B2C, rutas internas de almacén, incidencias puntuales sin patrón ni información de negociación comercial activa.
