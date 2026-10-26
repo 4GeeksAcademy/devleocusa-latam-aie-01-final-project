@@ -23,11 +23,12 @@ services:
     container_name: trackflow-api
     command: uvicorn src.fastapi_server:app --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:
       <<: *common-env
+      CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}"
       TRACKFLOW_API_BASE_URL: "http://127.0.0.1:8000"
       MCP_SERVER_URL: "http://mcp:8001/mcp"
       MCP_OAUTH_TOKEN_URL: "${MCP_OAUTH_TOKEN_URL:-http://keycloak:8080/realms/trackflow/protocol/openid-connect/token}"
@@ -55,8 +56,6 @@ services:
       context: .
       dockerfile: mcps/Dockerfile
     container_name: trackflow-mcp
-    ports:
-      - "8001:8001"
     env_file:
       - .env
     environment:
@@ -88,8 +87,6 @@ services:
     image: quay.io/keycloak/keycloak:26.3
     container_name: trackflow-keycloak
     command: start-dev --import-realm --http-enabled=true
-    ports:
-      - "8080:8080"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME:-admin}"
       KC_BOOTSTRAP_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD in the root .env}"
@@ -116,8 +113,8 @@ services:
       dockerfile: Dockerfile
     container_name: trackflow-uis
     ports:
-      - "3000:3000"
-      - "3001:3001"
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3001"
     env_file:
       - .env
     environment:
@@ -144,7 +141,7 @@ services:
     image: redis:alpine
     container_name: trackflow-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     command: redis-server --maxmemory-policy noeviction
     environment:
       <<: *common-env
@@ -178,7 +175,7 @@ services:
     container_name: trackflow-flower
     command: celery --broker=redis://redis:6379/0 flower --port=5555
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     environment:
       <<: *common-env
     depends_on:
@@ -191,8 +188,8 @@ services:
     image: qdrant/qdrant:latest
     container_name: trackflow-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     environment:

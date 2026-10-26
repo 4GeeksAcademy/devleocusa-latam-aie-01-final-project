@@ -19,9 +19,7 @@ def _get_secret_key() -> str:
     secret_key = os.getenv("SECRET_KEY")
     if secret_key:
         return secret_key
-
-    # Local/dev fallback to avoid hard failures when env var is not configured.
-    return "trackflow-dev-secret-key"
+    raise RuntimeError("SECRET_KEY must be configured; refusing to use an insecure fallback.")
 
 
 def _get_algorithm() -> str:

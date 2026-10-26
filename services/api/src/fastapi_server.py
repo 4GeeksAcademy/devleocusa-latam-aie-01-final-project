@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -46,13 +47,37 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="TrackFlow Auth API", lifespan=lifespan)
 
+_cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+for _origin in _cors_origins:
+    _parsed_origin = urlparse(_origin)
+    if _parsed_origin.scheme not in {"http", "https"} or not _parsed_origin.netloc:
+        raise RuntimeError("CORS_ALLOWED_ORIGINS must contain valid absolute HTTP(S) origins.")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.url.scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
 
 # Telemetry middleware — PII sanitization, circuit breaker, exclusion enforcement
 app.add_middleware(TelemetryMiddleware)

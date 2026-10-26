@@ -17,11 +17,17 @@ from src.models.schemas import (
     SKUExitResponse,
     SKURead,
 )
-from src.models.user import User
+from src.models.user import User, UserRole
 from src.services.auth_service import get_current_user
 from src.telemetry import emit_event
 
 inventory_router = APIRouter(prefix="/inventory", tags=["inventory"])
+
+
+def _require_inventory_writer(user: User) -> User:
+    if user.role not in {UserRole.ADMIN, UserRole.MANAGER}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    return user
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────
@@ -114,6 +120,7 @@ class _OutboundRequest(BaseModel):
 @inventory_router.get("/products", response_model=list[SKURead])
 def list_products(
     db: Session = Depends(get_sql_session),
+    _current_user: User = Depends(get_current_user),
 ) -> list[SKURead]:
     """List all SKUs with their dynamically computed ``current_stock``."""
     cached = inventory_products_cache.get("all")
@@ -137,9 +144,10 @@ def list_products(
 def create_product(
     payload: SKUCreate,
     db: Session = Depends(get_sql_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> SKURead:
     """Create a new SKU product (initial stock is implicitly zero)."""
+    _require_inventory_writer(current_user)
     sku = SKU(
         name=payload.name,
         sku_code=payload.sku_code,
@@ -162,6 +170,7 @@ def create_product(
 def get_product(
     sku_id: str,
     db: Session = Depends(get_sql_session),
+    _current_user: User = Depends(get_current_user),
 ) -> SKURead:
     """Get a specific SKU with its computed ``current_stock``."""
     cached = inventory_product_cache.get(sku_id)
@@ -190,13 +199,15 @@ def get_product(
 def create_inbound_order(
     payload: _InboundRequest,
     db: Session = Depends(get_sql_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> SKUEntryResponse:
     """Record an inbound stock movement (SKUEntry).
 
     The ``user_uuid`` is **not** taken from the request body; it is
     injected from the authenticated user's token.
     """
+    _require_inventory_writer(current_user)
+
     # Verify the SKU exists
     sku = db.get(SKU, payload.sku_id)
     if sku is None:
@@ -208,7 +219,7 @@ def create_inbound_order(
     entry = SKUEntry(
         sku_id=payload.sku_id,
         quantity=payload.quantity,
-        user_uuid=str(_current_user.id),
+        user_uuid=str(current_user.id),
     )
     db.add(entry)
     db.commit()
@@ -237,7 +248,7 @@ def create_inbound_order(
 def create_outbound_order(
     payload: _OutboundRequest,
     db: Session = Depends(get_sql_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> SKUExitResponse:
     """Record an outbound stock movement (SKUExit).
 
@@ -245,6 +256,8 @@ def create_outbound_order(
     stock would be < 0 the transaction is rejected with HTTP 400.
     The ``user_uuid`` is injected from the authenticated user's token.
     """
+    _require_inventory_writer(current_user)
+
     # Verify the SKU exists
     sku = db.get(SKU, payload.sku_id)
     if sku is None:
@@ -274,7 +287,7 @@ def create_outbound_order(
             stock_available=current_stock,
             stock_deficit=stock_deficit,
             user_error_ratio=user_error_ratio,
-            user_uuid=str(_current_user.id),
+            user_uuid=str(current_user.id),
         )
 
         raise HTTPException(
@@ -289,7 +302,7 @@ def create_outbound_order(
     exit_order = SKUExit(
         sku_id=payload.sku_id,
         quantity=payload.quantity,
-        user_uuid=str(_current_user.id),
+        user_uuid=str(current_user.id),
     )
     db.add(exit_order)
     db.commit()
@@ -313,6 +326,7 @@ def create_outbound_order(
 @inventory_router.get("/orders")
 def list_orders(
     db: Session = Depends(get_sql_session),
+    _current_user: User = Depends(get_current_user),
 ) -> list[dict[str, object]]:
     """List a combined history of inbound and outbound orders with SKU data.
 
