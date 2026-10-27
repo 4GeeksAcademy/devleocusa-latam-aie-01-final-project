@@ -49,16 +49,16 @@ class TestGetSecretKey:
         assert len(result) > 0
 
     def test_fallback_when_env_var_not_set(self, monkeypatch):
-        """Boundary: SECRET_KEY is unset → returns dev fallback."""
+        """Fail closed when SECRET_KEY is not configured."""
         monkeypatch.delenv("SECRET_KEY", raising=False)
-        result = _get_secret_key()
-        assert result == "trackflow-dev-secret-key"
+        with pytest.raises(RuntimeError, match="SECRET_KEY must be configured"):
+            _get_secret_key()
 
     def test_fallback_when_env_var_empty(self, monkeypatch):
-        """Boundary: SECRET_KEY is empty string → falls back to dev key."""
+        """Fail closed when SECRET_KEY is empty."""
         monkeypatch.setenv("SECRET_KEY", "")
-        result = _get_secret_key()
-        assert result == "trackflow-dev-secret-key"
+        with pytest.raises(RuntimeError, match="SECRET_KEY must be configured"):
+            _get_secret_key()
 
 
 # ======================================================================

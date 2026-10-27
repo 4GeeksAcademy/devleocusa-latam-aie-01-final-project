@@ -76,8 +76,17 @@ def _can_update_target_user(current_user: User, target_user_id: str) -> bool:
     return str(current_user.id) == target_user_id
 
 
+def _require_admin(current_user: User) -> None:
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+
 @users_router.post("", response_model=UserWithProfileResponse, status_code=status.HTTP_201_CREATED)
-def register_user(payload: UserCreateRequest) -> UserWithProfileResponse:
+def register_user(
+    payload: UserCreateRequest,
+) -> UserWithProfileResponse:
+    # Self-service registration remains public; create_user assigns the
+    # non-privileged default role and this payload intentionally has no role.
     try:
         user = create_user(
             email=payload.email,
@@ -100,7 +109,8 @@ def register_user(payload: UserCreateRequest) -> UserWithProfileResponse:
 
 
 @users_router.get("", response_model=list[UserResponse])
-def get_users(_current_user: User = Depends(get_current_user)) -> list[UserResponse]:
+def get_users(current_user: User = Depends(get_current_user)) -> list[UserResponse]:
+    _require_admin(current_user)
     cached = users_list_cache.get("all")
     if cached is not None:
         return cached  # type: ignore[return-value]
@@ -112,7 +122,9 @@ def get_users(_current_user: User = Depends(get_current_user)) -> list[UserRespo
 
 
 @users_router.get("/{user_id}", response_model=UserResponse)
-def get_user(user_id: str, _current_user: User = Depends(get_current_user)) -> UserResponse:
+def get_user(user_id: str, current_user: User = Depends(get_current_user)) -> UserResponse:
+    if current_user.role != UserRole.ADMIN and str(current_user.id) != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     user = get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -129,6 +141,8 @@ def put_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     updates = payload.model_dump(exclude_none=True)
+    if current_user.role != UserRole.ADMIN and "role" in updates:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     try:
         user = update_user(user_id, updates)
     except PasswordValidationError as exc:
@@ -148,7 +162,8 @@ def put_user(
 
 
 @users_router.delete("/{user_id}")
-def remove_user(user_id: str, _current_user: User = Depends(get_current_user)) -> dict[str, str]:
+def remove_user(user_id: str, current_user: User = Depends(get_current_user)) -> dict[str, str]:
+    _require_admin(current_user)
     deleted = delete_user(user_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
