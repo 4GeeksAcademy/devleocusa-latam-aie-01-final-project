@@ -9,8 +9,8 @@ from src.routes import chat_router as chat_module
 from src.services.auth_service import create_access_token
 
 
-def test_websocket_auth_and_snapshot(test_user, monkeypatch) -> None:
-    user, _ = test_user
+def test_websocket_auth_and_snapshot(manager_user, monkeypatch) -> None:
+    user, _ = manager_user
     app = FastAPI()
     app.include_router(chat_module.chat_router)
 
@@ -56,6 +56,20 @@ def test_websocket_rejects_missing_auth() -> None:
         try:
             with client.websocket_connect("/chat/ws/no_auth"):
                 raise AssertionError("unauthenticated websocket was accepted")
+        except Exception as error:
+            assert "1008" in str(error) or "WebSocketDisconnect" in type(error).__name__
+
+
+def test_websocket_rejects_customer_role(test_user) -> None:
+    user, _ = test_user
+    app = FastAPI()
+    app.include_router(chat_module.chat_router)
+    token = create_access_token(user.id)
+
+    with TestClient(app) as client:
+        try:
+            with client.websocket_connect(f"/chat/ws/customer_session?token={token}"):
+                raise AssertionError("customer websocket was accepted")
         except Exception as error:
             assert "1008" in str(error) or "WebSocketDisconnect" in type(error).__name__
 

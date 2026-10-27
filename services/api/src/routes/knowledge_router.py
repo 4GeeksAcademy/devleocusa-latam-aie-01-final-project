@@ -8,16 +8,17 @@ against the TrackFlow knowledge base.
 from __future__ import annotations
 
 import logging
+import unicodedata
 from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.agent.invocation import invoke_agent
 from src.agent.guardrails import summarize_guardrail_events
 from src.models.user import User
-from src.services.auth_service import get_current_user
+from src.services.access_control import require_internal_operator
 
 knowledge_router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 logger = logging.getLogger(__name__)
@@ -34,6 +35,16 @@ class KnowledgeQueryRequest(BaseModel):
         description="Pregunta en lenguaje natural sobre la base de conocimiento de TrackFlow",
         examples=["¿Cuál es la política de devoluciones de TrackFlow?"],
     )
+
+    @field_validator("question")
+    @classmethod
+    def normalize_question(cls, value: str) -> str:
+        normalized = unicodedata.normalize("NFC", value).strip()
+        if any(unicodedata.category(character) == "Cc" and character not in "\n\t" for character in normalized):
+            raise ValueError("La pregunta contiene caracteres de control no permitidos.")
+        if len(normalized) < 3:
+            raise ValueError("La pregunta debe contener al menos 3 caracteres.")
+        return normalized
 
 
 class KnowledgeQueryResponse(BaseModel):
@@ -52,6 +63,28 @@ class GuardrailSummaryResponse(BaseModel):
     by_reason: dict[str, int]
 
 
+async def enforce_knowledge_rate_limit(
+    request: Request,
+    current_user: User = Depends(require_internal_operator),
+) -> None:
+    """Apply a shared, authenticated-user limit before any model/tool call."""
+    limiter = getattr(request.app.state, "agent_rate_limiter", None)
+    if limiter is None:
+        raise HTTPException(status_code=503, detail="Servicio temporalmente no disponible.")
+    try:
+        allowed, retry_after = await limiter.allow(str(current_user.id))
+    except Exception:
+        logger.exception("No se pudo consultar el rate limiter del agente")
+        # Fail closed: a Redis failure must not permit unbounded model spend.
+        raise HTTPException(status_code=503, detail="Servicio temporalmente no disponible.") from None
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Límite de consultas alcanzado. Inténtalo más tarde.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
 # ── Endpoint ───────────────────────────────────────────────────────────
 
 @knowledge_router.post(
@@ -66,7 +99,8 @@ class GuardrailSummaryResponse(BaseModel):
 async def knowledge_query(
     payload: KnowledgeQueryRequest,
     request: Request,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_internal_operator),
+    _rate_limit: None = Depends(enforce_knowledge_rate_limit),
 ) -> KnowledgeQueryResponse:
     """POST /knowledge/query — Query the TrackFlow knowledge base.
 
@@ -104,7 +138,7 @@ async def knowledge_query(
 async def guardrails_summary(
     since: datetime | None = Query(default=None),
     until: datetime | None = Query(default=None),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_internal_operator),
 ) -> GuardrailSummaryResponse:
     for bound in (since, until):
         if bound is not None and bound.utcoffset() is None:

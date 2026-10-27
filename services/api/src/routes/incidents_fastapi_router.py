@@ -18,7 +18,10 @@ from src.models.incident import (
     IncidentStatusResponse,
 )
 from src.models.user import User
-from src.services.auth_service import get_current_user
+from src.services.access_control import (
+    require_internal_operator,
+    require_service_or_operator,
+)
 from src.services.incidents_analysis_service import analyze_incidents_csv
 from src.services.incidents_service import (
     can_transition_status,
@@ -110,7 +113,7 @@ def _raise_bad_request_with_details(details: list[dict[str, str]]) -> None:
 @incidents_fastapi_router.post("/api/incidents", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 def create_incident_route(
     payload: dict,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_internal_operator),
 ) -> IncidentResponse:
     try:
         request_body = IncidentCreateRequest.model_validate(payload)
@@ -131,7 +134,7 @@ def list_incidents_route(
     origin: IncidentOrigin | None = None,
     branch: IncidentBranch | None = None,
     category: IncidentCategory | None = None,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_service_or_operator),
 ) -> list[IncidentListResponse]:
     incidents = list_incidents(status=status, origin=origin, branch=branch, category=category)
     return [IncidentListResponse.model_validate(i.model_dump()) for i in incidents]
@@ -139,7 +142,7 @@ def list_incidents_route(
 
 @incidents_fastapi_router.get("/api/incidents/summary")
 def incidents_summary_route(
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_service_or_operator),
 ) -> dict[str, object]:
     # Try cache first — avoids expensive full-table scan
     cached = _summary_cache.get("summary")
@@ -154,7 +157,7 @@ def incidents_summary_route(
 @incidents_fastapi_router.get("/api/incidents/{incident_id}", response_model=IncidentResponse)
 def get_incident_by_id_route(
     incident_id: str,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_service_or_operator),
 ) -> IncidentResponse:
     incident = get_incident_by_id(incident_id)
     if incident is None:
@@ -167,7 +170,7 @@ def get_incident_by_id_route(
 def patch_incident_status_route(
     incident_id: str,
     payload: dict,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_service_or_operator),
 ) -> IncidentStatusResponse:
     incident = get_incident_by_id(incident_id)
     if incident is None:
@@ -208,7 +211,7 @@ def patch_incident_status_route(
 @incidents_fastapi_router.post("/api/incidents/analyze")
 async def analyze_incidents_route(
     file: UploadFile = File(...),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_internal_operator),
 ) -> dict:
     if not _is_csv_upload(file):
         raise HTTPException(

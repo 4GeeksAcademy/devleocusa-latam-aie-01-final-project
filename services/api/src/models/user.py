@@ -16,6 +16,7 @@ class UserRole(str, Enum):
     ADMIN = "admin"
     MANAGER = "manager"
     USER = "user"
+    SERVICE = "service"
 
 
 class User(BaseModel):

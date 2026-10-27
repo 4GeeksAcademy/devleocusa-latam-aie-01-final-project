@@ -80,3 +80,9 @@ Validación local de sintaxis: `docker compose config --quiet`. Esto no valida l
 | Puertos publicados Compose | Baseline detectado; exposición de desarrollo amplia | Configuración de producción validada y scan externo confirmando puertos no permitidos cerrados. |
 
 **No declarar sign-off** hasta verificar todos los controles del host real y restringir exposición de los servicios internos.
+
+## Nota de alcance del ciclo NIST — 2026-10-27
+
+El solicitante confirma que SSH está atendido por Operaciones y excluye esa tarea de esta implementación. Esta exclusión no equivale a verificación técnica del host: la guía anterior sigue marcando SSH, usuario no-root, firewall y exposición productiva como no verificados por esta auditoría. No se han cambiado reglas del host ni se ha ejecutado un escaneo de red.
+
+Para secretos y endpoints agentic, consultar `ai-inventory.es.md` y `nist-ai-security-assessment.es.md`. El limitador Redis protege `/knowledge/query` desde la API; requiere `REDIS_URL`, `AGENT_RATE_LIMIT` y `AGENT_RATE_WINDOW_SECONDS`, y responde fail-closed ante fallo de Redis. Esto no reemplaza TLS ni la política de firewall/proxy.

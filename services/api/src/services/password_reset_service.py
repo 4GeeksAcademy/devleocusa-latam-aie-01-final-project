@@ -67,10 +67,10 @@ def _get_reset_base_url() -> str:
 
 
 def _get_secret_key() -> str:
-    secret_key = os.getenv("SECRET_KEY")
-    if secret_key:
-        return secret_key
-    return "trackflow-dev-secret-key"
+    secret_key = os.getenv("SECRET_KEY", "").strip()
+    if not secret_key:
+        raise RuntimeError("SECRET_KEY must be configured before password reset tokens are used.")
+    return secret_key
 
 
 def _get_algorithm() -> str:
