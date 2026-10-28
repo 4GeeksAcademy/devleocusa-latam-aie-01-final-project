@@ -37,6 +37,17 @@ return {count, ttl}
         retry_after = max(int(ttl), 1)
         return int(count) <= self.limit, retry_after
 
+    async def verify_backend(self) -> None:
+        """Fail startup unless Redis responds and supports the limiter's Lua script."""
+        await self.redis.ping()
+        key = f"trackflow:agent-rate:healthcheck:{os.getpid()}"
+        try:
+            result = await self.redis.eval(self._SCRIPT, 1, key, 5)
+            if not isinstance(result, (list, tuple)) or len(result) != 2:
+                raise RuntimeError("Redis rate limiter health check returned an invalid result.")
+        finally:
+            await self.redis.delete(key)
+
 
 def create_agent_rate_limiter() -> RedisFixedWindowRateLimiter:
     redis_url = os.getenv("REDIS_URL", "").strip()

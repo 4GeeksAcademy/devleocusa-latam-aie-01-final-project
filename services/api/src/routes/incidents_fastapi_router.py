@@ -38,6 +38,13 @@ incidents_fastapi_router = APIRouter(tags=["incidents-legacy"])
 # Data changes infrequently but is read constantly (dashboard / KPIs).
 _summary_cache = TTLCache(ttl_seconds=30)
 
+
+def _require_tenant(user: User) -> str:
+    """Return the server-provisioned tenant, rejecting unassigned identities."""
+    if not user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant membership is required.")
+    return user.tenant_id
+
 ACCEPTED_MIME_TYPES = {
     "text/csv",
     "application/csv",
@@ -113,17 +120,18 @@ def _raise_bad_request_with_details(details: list[dict[str, str]]) -> None:
 @incidents_fastapi_router.post("/api/incidents", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 def create_incident_route(
     payload: dict,
-    _current_user: User = Depends(require_internal_operator),
+    current_user: User = Depends(require_internal_operator),
 ) -> IncidentResponse:
     try:
         request_body = IncidentCreateRequest.model_validate(payload)
     except ValidationError as error:
         _raise_bad_request_with_details(_structured_validation_error(error))
 
-    incident = create_incident(request_body.model_dump(mode="python"))
+    tenant_id = _require_tenant(current_user)
+    incident = create_incident(request_body.model_dump(mode="python"), tenant_id=tenant_id)
 
     # Invalidate summary cache — a new incident changes all aggregations
-    _summary_cache.invalidate("summary")
+    _summary_cache.invalidate(f"summary:{tenant_id}")
 
     return IncidentResponse.model_validate(incident.model_dump())
 
@@ -134,32 +142,36 @@ def list_incidents_route(
     origin: IncidentOrigin | None = None,
     branch: IncidentBranch | None = None,
     category: IncidentCategory | None = None,
-    _current_user: User = Depends(require_service_or_operator),
+    current_user: User = Depends(require_service_or_operator),
 ) -> list[IncidentListResponse]:
-    incidents = list_incidents(status=status, origin=origin, branch=branch, category=category)
+    tenant_id = _require_tenant(current_user)
+    incidents = list_incidents(tenant_id=tenant_id, status=status, origin=origin, branch=branch, category=category)
     return [IncidentListResponse.model_validate(i.model_dump()) for i in incidents]
 
 
 @incidents_fastapi_router.get("/api/incidents/summary")
 def incidents_summary_route(
-    _current_user: User = Depends(require_service_or_operator),
+    current_user: User = Depends(require_service_or_operator),
 ) -> dict[str, object]:
+    tenant_id = _require_tenant(current_user)
     # Try cache first — avoids expensive full-table scan
-    cached = _summary_cache.get("summary")
+    cache_key = f"summary:{tenant_id}"
+    cached = _summary_cache.get(cache_key)
     if cached is not None:
         return cached  # type: ignore[return-value]
 
-    result = incidents_summary()
-    _summary_cache.set("summary", result)
+    result = incidents_summary(tenant_id=tenant_id)
+    _summary_cache.set(cache_key, result)
     return result
 
 
 @incidents_fastapi_router.get("/api/incidents/{incident_id}", response_model=IncidentResponse)
 def get_incident_by_id_route(
     incident_id: str,
-    _current_user: User = Depends(require_service_or_operator),
+    current_user: User = Depends(require_service_or_operator),
 ) -> IncidentResponse:
-    incident = get_incident_by_id(incident_id)
+    tenant_id = _require_tenant(current_user)
+    incident = get_incident_by_id(incident_id, tenant_id=tenant_id)
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidencia no encontrada.")
 
@@ -170,9 +182,10 @@ def get_incident_by_id_route(
 def patch_incident_status_route(
     incident_id: str,
     payload: dict,
-    _current_user: User = Depends(require_service_or_operator),
+    current_user: User = Depends(require_service_or_operator),
 ) -> IncidentStatusResponse:
-    incident = get_incident_by_id(incident_id)
+    tenant_id = _require_tenant(current_user)
+    incident = get_incident_by_id(incident_id, tenant_id=tenant_id)
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidencia no encontrada.")
 
@@ -194,12 +207,12 @@ def patch_incident_status_route(
             ]
         )
 
-    updated = update_incident_status(incident_id, request_body.status)
+    updated = update_incident_status(incident_id, request_body.status, tenant_id=tenant_id)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incidencia no encontrada.")
 
     # Invalidate summary cache — status transition affects aggregations
-    _summary_cache.invalidate("summary")
+    _summary_cache.invalidate(f"summary:{tenant_id}")
 
     return IncidentStatusResponse(
         id=updated.id,

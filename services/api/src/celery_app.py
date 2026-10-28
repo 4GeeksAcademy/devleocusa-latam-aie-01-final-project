@@ -22,8 +22,8 @@ app = Celery("trackflow_worker")
 # ── Broker & Result Backend ────────────────────────────────────────────
 # Both point to the same Redis instance via the shared REDIS_URL variable.
 app.conf.update(
-    broker_url=settings.redis_url,
-    result_backend=settings.redis_url,
+    broker_url=settings.celery_broker_url,
+    result_backend=settings.celery_result_backend,
     # Send worker events so Flower can display real-time task metrics.
     worker_send_task_events=True,
     # Accept JSON serialisation for cross-language compatibility.

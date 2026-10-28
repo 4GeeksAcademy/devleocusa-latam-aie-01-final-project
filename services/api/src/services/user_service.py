@@ -47,6 +47,7 @@ def create_user(
     name: str | None = None,
     phone: str | None = None,
     address: str | None = None,
+    tenant_id: str | None = None,
 ) -> User:
     """Create a user in TinyDB with hashed password and optional linked profile."""
 
@@ -63,6 +64,7 @@ def create_user(
         "hashed_password": hash_password(password),
         "is_active": is_active,
         "role": resolved_role.value,
+        "tenant_id": tenant_id,
         "created_at": _now_iso(),
     }
 
@@ -122,7 +124,7 @@ def update_user(user_id: TinyDBId, updates: dict[str, Any]) -> User | None:
     if document is None:
         return None
 
-    mutable_fields = {"email", "is_active", "role", "password"}
+    mutable_fields = {"email", "is_active", "role", "password", "tenant_id"}
     safe_updates = {key: value for key, value in updates.items() if key in mutable_fields}
 
     if "password" in safe_updates:

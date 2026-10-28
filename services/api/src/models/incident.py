@@ -55,6 +55,7 @@ class Incident(BaseModel):
     status: IncidentStatus
     origin: IncidentOrigin
     branch: IncidentBranch
+    tenant_id: str = Field(min_length=1, max_length=128)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -75,6 +76,7 @@ class IncidentResponse(BaseModel):
     status: IncidentStatus
     origin: IncidentOrigin
     branch: IncidentBranch
+    tenant_id: str
     created_at: datetime
     updated_at: datetime
 
@@ -92,6 +94,7 @@ class IncidentListResponse(BaseModel):
     status: IncidentStatus
     origin: IncidentOrigin
     branch: IncidentBranch
+    tenant_id: str
     created_at: datetime
 
 

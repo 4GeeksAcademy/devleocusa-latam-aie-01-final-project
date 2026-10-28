@@ -27,4 +27,7 @@ class User(BaseModel):
     hashed_password: str = Field(min_length=1)
     is_active: bool = True
     role: UserRole
+    # Provisioned by an administrator; never accepted by public registration.
+    # None is intentionally treated as unassigned and fails closed on tenant APIs.
+    tenant_id: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import uuid
 
 import pytest
 
@@ -34,3 +36,29 @@ def test_redis_rate_limiter_allows_only_configured_number_of_requests() -> None:
 def test_rate_limiter_rejects_nonpositive_configuration() -> None:
     with pytest.raises(ValueError, match="positive integers"):
         RedisFixedWindowRateLimiter(object(), limit=0, window_seconds=60)  # type: ignore[arg-type]
+
+
+def test_rate_limiter_works_with_real_redis() -> None:
+    """Run with REDIS_INTEGRATION_URL=redis://... to prove real Redis/Lua behavior."""
+    redis_url = os.getenv("REDIS_INTEGRATION_URL", "").strip()
+    if not redis_url:
+        pytest.skip("Set REDIS_INTEGRATION_URL to run the real Redis integration test.")
+
+    from redis.asyncio import Redis
+
+    async def exercise_real_redis() -> None:
+        client = Redis.from_url(redis_url, decode_responses=True)
+        key = f"integration-{uuid.uuid4()}"
+        limiter = RedisFixedWindowRateLimiter(client, limit=2, window_seconds=30)
+        try:
+            await limiter.verify_backend()
+            assert await limiter.allow(key) == (True, 30)
+            assert await limiter.allow(key) == (True, 30)
+            allowed, retry_after = await limiter.allow(key)
+            assert allowed is False
+            assert 1 <= retry_after <= 30
+        finally:
+            await client.delete(f"trackflow:agent-rate:{key}")
+            await client.aclose()
+
+    asyncio.run(exercise_real_redis())

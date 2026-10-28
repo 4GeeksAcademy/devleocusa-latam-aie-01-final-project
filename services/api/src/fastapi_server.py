@@ -30,14 +30,17 @@ from src.routes.knowledge_router import knowledge_router
 from src.routes.rfp_router import rfp_router
 from src.routes.chat_router import chat_router
 from src.services.rfp_event_service import rfp_event_broker
+from src.services.auth_service import validate_production_security
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Create SQLModel tables in Supabase on startup."""
     load_env_if_available()
+    validate_production_security()
     init_db()
     agent_rate_limiter = create_agent_rate_limiter()
+    await agent_rate_limiter.verify_backend()
     _app.state.agent_rate_limiter = agent_rate_limiter
     try:
         await rfp_event_broker.start()

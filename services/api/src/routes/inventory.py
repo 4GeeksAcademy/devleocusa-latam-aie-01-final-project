@@ -8,7 +8,9 @@ from sqlmodel import Session, func, select
 
 from src.cache import inventory_products_cache, inventory_product_cache
 from src.database import get_sql_session
-from src.models.models import SKU, SKUEntry, SKUExit
+from datetime import datetime, timezone
+
+from src.models.models import PendingSKUExit, SKU, SKUEntry, SKUExit
 from src.models.schemas import (
     SKUCreate,
     SKUEntryRead,
@@ -112,6 +114,11 @@ class _OutboundRequest(BaseModel):
 
     sku_id: str = Field(min_length=1)
     quantity: int = Field(ge=1)
+
+
+class _OutboundDecision(BaseModel):
+    decision: str = Field(pattern="^(approve|reject)$")
+    comment: str = Field(default="", max_length=1000)
 
 
 # ── GET /inventory/products ──────────────────────────────────────────
@@ -242,15 +249,14 @@ def create_inbound_order(
 
 @inventory_router.post(
     "/orders/outbound",
-    response_model=SKUExitResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def create_outbound_order(
     payload: _OutboundRequest,
     db: Session = Depends(get_sql_session),
     current_user: User = Depends(get_current_user),
-) -> SKUExitResponse:
-    """Record an outbound stock movement (SKUExit).
+) -> dict[str, object]:
+    """Create a pending outbound request; a second operator must approve it.
 
     **Business rule:** stock must not go negative.  If the resulting
     stock would be < 0 the transaction is rejected with HTTP 400.
@@ -299,25 +305,61 @@ def create_outbound_order(
             ),
         )
 
-    exit_order = SKUExit(
+    request = PendingSKUExit(
         sku_id=payload.sku_id,
         quantity=payload.quantity,
-        user_uuid=str(current_user.id),
+        requester_uuid=str(current_user.id),
     )
-    db.add(exit_order)
+    db.add(request)
     db.commit()
-    db.refresh(exit_order)
+    db.refresh(request)
+    return {"request_id": request.id, "status": request.status, "detail": "Outbound request awaits approval by a different manager/admin."}
 
-    # Invalidate product caches — stock changed for this SKU
-    inventory_products_cache.invalidate("all")
-    inventory_product_cache.invalidate(payload.sku_id)
 
-    return SKUExitResponse(
-        id=exit_order.id,
-        sku_id=exit_order.sku_id,
-        quantity=exit_order.quantity,
-        created_at=exit_order.created_at,
-    )
+@inventory_router.post("/orders/outbound/{request_id}/decision")
+def decide_outbound_order(
+    request_id: str,
+    payload: _OutboundDecision,
+    db: Session = Depends(get_sql_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    """Approve/reject a pending dispatch, recording an immutable decision outcome."""
+    _require_inventory_writer(current_user)
+    request = db.exec(
+        select(PendingSKUExit)
+        .where(PendingSKUExit.id == request_id)
+        .with_for_update()
+    ).first()
+    if request is None:
+        raise HTTPException(status_code=404, detail="Outbound request not found.")
+    if request.status != "pending":
+        raise HTTPException(status_code=409, detail="Outbound request has already been decided.")
+    if request.requester_uuid == str(current_user.id):
+        raise HTTPException(status_code=403, detail="A different operator must approve this request.")
+
+    if payload.decision == "approve":
+        # Serialize stock checks for dispatch approvals of the same SKU.
+        db.exec(select(SKU).where(SKU.id == request.sku_id).with_for_update()).first()
+        current_stock = _compute_current_stock(db, request.sku_id)
+        if current_stock < request.quantity:
+            raise HTTPException(status_code=409, detail="Stock changed; insufficient stock for approval.")
+        db.add(SKUExit(
+            sku_id=request.sku_id,
+            quantity=request.quantity,
+            user_uuid=str(current_user.id),
+        ))
+        request.status = "approved"
+    else:
+        request.status = "rejected"
+    request.approver_uuid = str(current_user.id)
+    request.decision_comment = payload.comment or None
+    request.decided_at = datetime.now(timezone.utc)
+    db.add(request)
+    db.commit()
+    if request.status == "approved":
+        inventory_products_cache.invalidate("all")
+        inventory_product_cache.invalidate(request.sku_id)
+    return {"request_id": request.id, "status": request.status, "approver_uuid": request.approver_uuid}
 
 
 # ── GET /inventory/orders ───────────────────────────────────────────

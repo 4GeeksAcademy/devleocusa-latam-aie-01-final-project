@@ -55,6 +55,9 @@ def test_llm_classifier_parses_a_typed_tool_decision(monkeypatch) -> None:
 
     monkeypatch.setattr(routing, "OpenAI", FakeOpenAI)
     monkeypatch.setenv("AGENT_ROUTER_MODEL", "router-test-model")
+    # This test verifies client construction/parsing with FakeOpenAI only; keep
+    # provider configuration deterministic regardless of a developer's .env.
+    monkeypatch.setenv("GENERATION_BASE_URL", "https://api.openai.com/v1")
 
     decision = routing.classify_question("¿En qué estado está el ticket ticket-42?")
 

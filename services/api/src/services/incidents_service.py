@@ -34,9 +34,9 @@ def _to_incident(document: Document) -> Incident:
     return Incident.model_validate(payload)
 
 
-def create_incident(payload: dict[str, object]) -> Incident:
+def create_incident(payload: dict[str, object], *, tenant_id: str) -> Incident:
     incidents_table = get_incidents_table()
-    incident = Incident(**payload)
+    incident = Incident(**payload, tenant_id=tenant_id)
 
     doc_id = incidents_table.insert(incident.model_dump(mode="json"))
     document = incidents_table.get(doc_id=doc_id)
@@ -46,10 +46,10 @@ def create_incident(payload: dict[str, object]) -> Incident:
     return _to_incident(document)
 
 
-def get_incident_by_id(incident_id: str) -> Incident | None:
+def get_incident_by_id(incident_id: str, *, tenant_id: str) -> Incident | None:
     incidents_table = get_incidents_table()
     query = Query()
-    document = incidents_table.get(query.id == incident_id)
+    document = incidents_table.get((query.id == incident_id) & (query.tenant_id == tenant_id))
     if document is None:
         return None
     return _to_incident(document)
@@ -57,13 +57,14 @@ def get_incident_by_id(incident_id: str) -> Incident | None:
 
 def list_incidents(
     *,
+    tenant_id: str,
     status: IncidentStatus | None = None,
     origin: IncidentOrigin | None = None,
     branch: IncidentBranch | None = None,
     category: IncidentCategory | None = None,
 ) -> list[Incident]:
     incidents_table = get_incidents_table()
-    documents = incidents_table.all()
+    documents = incidents_table.search(Query().tenant_id == tenant_id)
 
     if status is not None:
         documents = [document for document in documents if document.get("status") == status.value]
@@ -86,10 +87,10 @@ def can_transition_status(current: IncidentStatus, target: IncidentStatus) -> bo
     return target in ALLOWED_STATUS_TRANSITIONS[current]
 
 
-def update_incident_status(incident_id: str, status: IncidentStatus) -> Incident | None:
+def update_incident_status(incident_id: str, status: IncidentStatus, *, tenant_id: str) -> Incident | None:
     incidents_table = get_incidents_table()
     query = Query()
-    document = incidents_table.get(query.id == incident_id)
+    document = incidents_table.get((query.id == incident_id) & (query.tenant_id == tenant_id))
     if document is None:
         return None
 
@@ -107,9 +108,9 @@ def update_incident_status(incident_id: str, status: IncidentStatus) -> Incident
     return _to_incident(updated_document)
 
 
-def incidents_summary() -> dict[str, object]:
+def incidents_summary(*, tenant_id: str) -> dict[str, object]:
     incidents_table = get_incidents_table()
-    documents = incidents_table.all()
+    documents = incidents_table.search(Query().tenant_id == tenant_id)
 
     status_counter: Counter[str] = Counter({status.value: 0 for status in IncidentStatus})
     category_counter: Counter[str] = Counter({category.value: 0 for category in IncidentCategory})

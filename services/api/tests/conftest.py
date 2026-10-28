@@ -145,6 +145,7 @@ def manager_user(fresh_db):
         email="manager@trackflow.io",
         password="Manager!2025",
         role="manager",
+        tenant_id="test-tenant",
         name="Manager User",
     )
     yield user, "Manager!2025"
@@ -168,6 +169,7 @@ def service_user(fresh_db):
         email="mcp-service@trackflow.io",
         password="Service!2025",
         role="service",
+        tenant_id="test-tenant",
     )
     yield user, "Service!2025"
     get_users_table().remove(doc_ids=[user.id])
