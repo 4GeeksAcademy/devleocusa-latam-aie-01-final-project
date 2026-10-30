@@ -136,6 +136,53 @@ def auth_token(test_user):
 
 
 @pytest.fixture
+def manager_user(fresh_db):
+    """Create a TrackFlow manager for operator-only endpoint tests."""
+    from src.database import get_users_table
+    from src.services.user_service import create_user
+
+    user = create_user(
+        email="manager@trackflow.io",
+        password="Manager!2025",
+        role="manager",
+        tenant_id="test-tenant",
+        name="Manager User",
+    )
+    yield user, "Manager!2025"
+    get_users_table().remove(doc_ids=[user.id])
+
+
+@pytest.fixture
+def manager_token(manager_user):
+    from src.services.auth_service import create_access_token
+
+    return create_access_token(manager_user[0].id)
+
+
+@pytest.fixture
+def service_user(fresh_db):
+    """Create an explicitly provisioned, non-interactive service identity."""
+    from src.database import get_users_table
+    from src.services.user_service import create_user
+
+    user = create_user(
+        email="mcp-service@trackflow.io",
+        password="Service!2025",
+        role="service",
+        tenant_id="test-tenant",
+    )
+    yield user, "Service!2025"
+    get_users_table().remove(doc_ids=[user.id])
+
+
+@pytest.fixture
+def service_token(service_user):
+    from src.services.auth_service import create_access_token
+
+    return create_access_token(service_user[0].id)
+
+
+@pytest.fixture
 def expired_token(test_user):
     """Return a JWT that is already expired for the test user."""
     from datetime import datetime, timedelta, timezone

@@ -69,6 +69,36 @@ Antes de producción, usar un override/manifest de producción que:
 
 Validación local de sintaxis: `docker compose config --quiet`. Esto no valida las reglas del host ni equivale a scan externo.
 
+### Overlay de producción disponible
+
+`docker-compose.production.yml` y `deploy/nginx/trackflow.conf` proporcionan un baseline ejecutable: solo Nginx publica `443`, requiere certificado/clave TLS explícitos, aplica TLS 1.2+, reenvía HTTPS a API/MCP/Keycloak y elimina puertos/volúmenes de desarrollo de los servicios. La API comprueba en startup que `TRACKFLOW_ENV=production` tiene clave de firma, URL de base de datos, secreto del cliente MCP, orígenes CORS HTTPS, URLs públicas HTTPS y Redis con TLS (`rediss://`); ejecuta `PING` y el script Lua del limitador antes de aceptar tráfico. No se incluye certificado ni se declara que DNS, certificados, TLS de Redis, trust chain, secretos ni configuración externa hayan sido comprobados.
+
+Despliegue (en infraestructura autorizada, con valores provisionados por el secret manager, nunca en el repositorio):
+
+```sh
+export TRACKFLOW_ENV=production
+export TLS_CERT_FILE=/ruta-segura/fullchain.pem TLS_KEY_FILE=/ruta-segura/privkey.pem
+export TRACKFLOW_SECRET_FILE=/ruta-segura/api-signing-secret
+export SQL_URL_FILE=/ruta-segura/database-url
+export MCP_OAUTH_CLIENT_SECRET='...' # obtener del secret manager; no guardar en shell history compartido
+export REDIS_URL='rediss://...' # obtenido del gestor de secretos/configuración
+export CORS_ALLOWED_ORIGINS='https://app.example.com'
+export MCP_PUBLIC_URL='https://mcp.example.com'
+export OAUTH_ISSUER_URL='https://auth.example.com/realms/trackflow'
+export OAUTH_JWKS_URI='https://auth.example.com/realms/trackflow/protocol/openid-connect/certs'
+export KEYCLOAK_PUBLIC_URL='https://auth.example.com'
+docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+```
+
+`KEYCLOAK_ADMIN_PASSWORD` también debe inyectarse desde el secret manager. Configure las credenciales cliente MCP y credenciales de base de datos del mismo modo. Si el Redis administrado exige CA privada, inyectar la CA y habilitar validación de certificado en el cliente; no deshabilitarla para hacer pasar el healthcheck. La configuración Compose no valida seguridad de la plataforma/daemon Docker, registros de secretos ni cambios de esquema: aplicar `services/api/data/migrations/003_pending_sku_exit_approvals.sql` antes de desplegar el código que crea la tabla con `create_all`.
+
+El ensayo real del rate limiter se ejecuta con `REDIS_INTEGRATION_URL='rediss://...' pytest services/api/tests/test_agent_rate_limit.py -m integration`. El test crea claves de ventana únicas, ejecuta `PING` + Lua + límite en Redis real y elimina su clave. El startup probe cubre asimismo el endpoint Redis configurado en `REDIS_URL`.
+
+### Aprobación de despacho
+
+`POST /inventory/orders/outbound` ya no contabiliza una salida: crea una solicitud durable `pending_sku_exits` y responde `202`. Una identidad `manager`/`admin` distinta debe decidir en `POST /inventory/orders/outbound/{request_id}/decision` con `approve` o `reject`; al aprobar se vuelve a verificar stock y solo entonces se crea `SKUExit`. La fila conserva solicitante, aprobador, comentario, estado y tiempos. Los controles no sustituyen la autorización del operador: asignar identidades individuales y proteger las cuentas privilegiadas. Este flujo cubre el despacho de inventario representado por esa ruta; no demuestra que haya integración de ejecución con carriers, ni crea capacidades de devolución/cambio de carrier que no están implementadas.
+
 ## Estado de verificación
 
 | Control | Estado actual | Evidencia requerida para cerrar |
@@ -80,3 +110,9 @@ Validación local de sintaxis: `docker compose config --quiet`. Esto no valida l
 | Puertos publicados Compose | Baseline detectado; exposición de desarrollo amplia | Configuración de producción validada y scan externo confirmando puertos no permitidos cerrados. |
 
 **No declarar sign-off** hasta verificar todos los controles del host real y restringir exposición de los servicios internos.
+
+## Nota de alcance del ciclo NIST — 2026-10-27
+
+El solicitante confirma que SSH está atendido por Operaciones y excluye esa tarea de esta implementación. Esta exclusión no equivale a verificación técnica del host: la guía anterior sigue marcando SSH, usuario no-root, firewall y exposición productiva como no verificados por esta auditoría. No se han cambiado reglas del host ni se ha ejecutado un escaneo de red.
+
+Para secretos y endpoints agentic, consultar `ai-inventory.es.md` y `nist-ai-security-assessment.es.md`. El limitador Redis protege `/knowledge/query` desde la API; requiere `REDIS_URL`, `AGENT_RATE_LIMIT` y `AGENT_RATE_WINDOW_SECONDS`, y responde fail-closed ante fallo de Redis. Esto no reemplaza TLS ni la política de firewall/proxy.

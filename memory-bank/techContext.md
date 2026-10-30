@@ -368,6 +368,12 @@ Red interna: `trackflow-net` (bridge). Variables de entorno compartidas vía `x-
 
 ## Servidor MCP de herramientas corporativas (2026-10-06)
 
+### Autorización provisional y límite multi-tenant (2026-10-27)
+- `services/api/src/services/access_control.py` contiene los gates explícitos. `/knowledge/query`, resumen guardrail y `/chat/ws/{session_id}` aceptan solo `ADMIN`/`MANAGER`; API de incidencias lectura/status acepta `ADMIN`/`MANAGER`/`SERVICE`, mientras create y analyze CSV requieren operador. El rol `SERVICE` no es asignable por registro público; provisionar explícitamente la cuenta técnica MCP con un administrador. Los scopes OAuth MCP siguen controlando las tools.
+- Pruebas: `services/api/tests/test_incidents_authorization.py`, `test_knowledge_router_agent.py` (incluye `test_prompt_injection_is_refused_before_model_or_tools`) y `test_chat_websocket.py`. Suite enfocada API + auth: 116 passed; MCP: 9 passed.
+- IMPORTANTE: gates de rol no equivalen a tenant isolation. La API/TinyDB de incidencias y Qdrant/RAG no poseen relación user↔tenant ni scoping por tenant demostrado. Operadores y la cuenta compartida SERVICE siguen con alcance global. No introducir tenant desde el cuerpo/prompt: crear primero el modelo fuente de verdad, asignaciones, etiquetas de datos y filtros a nivel de datastore/tool; después añadir tests A→B.
+- La suite API completa tuvo 322 passed y un fallo ambiental en `test_agent_graph.py::test_llm_classifier_parses_a_typed_tool_decision`: el test espera `https://api.openai.com/v1` mientras el `.env` local define `GENERATION_BASE_URL=https://llm.4geeks.ai`. `docker compose config --quiet` y `git diff --check` pasaron.
+
 ### Arquitectura y runtime
 - El servicio vive en `mcps/` y ejecuta FastMCP por Streamable HTTP en `/mcp` (puerto 8001). `mcpauth` se integra como resource server; no se usan helpers OAuth de FastMCP.
 - `/.well-known/oauth-protected-resource` es metadata pública del protocolo; MCP exige bearer JWT válido antes de `tools/list` y `tools/call`. Keycloak 26.3 es issuer local de desarrollo en Compose, con estado persistido en `trackflow_keycloak_data`.

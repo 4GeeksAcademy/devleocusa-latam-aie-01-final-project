@@ -103,6 +103,22 @@ class SKUExit(SQLModel, table=True):
     )
 
 
+class PendingSKUExit(SQLModel, table=True):
+    """Outbound dispatch request requiring a distinct human approver."""
+
+    __tablename__ = "pending_sku_exits"
+
+    id: str = Field(default_factory=_new_uuid, primary_key=True)
+    sku_id: str = Field(foreign_key="sku.id", nullable=False, index=True)
+    quantity: int = Field(nullable=False, ge=1)
+    requester_uuid: str = Field(max_length=100, nullable=False)
+    status: str = Field(default="pending", max_length=20, nullable=False, index=True)
+    approver_uuid: Optional[str] = Field(default=None, max_length=100)
+    decision_comment: Optional[str] = Field(default=None, max_length=1000)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    decided_at: Optional[datetime] = Field(default=None)
+
+
 # ── Schema initialisation ────────────────────────────────────────────────
 # Tables are created at startup via database.init_db() – not here at import
 # time – so that reloader subprocesses can initialise cleanly.

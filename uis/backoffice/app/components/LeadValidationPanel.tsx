@@ -71,11 +71,7 @@ export function LeadValidationPanel() {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-xl font-semibold text-slate-900">Probar lógica de negocio (Hito 2)</h2>
-      <p className="mt-2 text-sm text-slate-600">
-        Este panel ejecuta funciones importadas desde src/utils/validations.ts sin duplicar lógica.
-      </p>
-
+      <h2 className="text-xl font-semibold text-slate-900">Lógica de Negocio</h2>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <label className="text-sm text-slate-700">
           Nombre de la empresa

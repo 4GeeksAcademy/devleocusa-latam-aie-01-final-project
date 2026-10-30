@@ -16,6 +16,8 @@ class Settings:
     """Immutable application settings loaded once at import time."""
 
     redis_url: str
+    celery_broker_url: str
+    celery_result_backend: str
 
 
 def _get_env(name: str, *, default: str | None = None, required: bool = True) -> str:
@@ -53,6 +55,8 @@ def load_settings() -> Settings:
     """Build a ``Settings`` instance from environment variables."""
     return Settings(
         redis_url=_get_env("REDIS_URL", default="redis://localhost:6379/0"),
+        celery_broker_url=_get_env("CELERY_BROKER_URL", required=False) or _get_env("REDIS_URL", default="redis://localhost:6379/0"),
+        celery_result_backend=_get_env("CELERY_RESULT_BACKEND", required=False) or _get_env("REDIS_URL", default="redis://localhost:6379/0"),
     )
 
 

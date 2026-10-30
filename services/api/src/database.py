@@ -111,7 +111,14 @@ _engine: object | None = None
 
 
 def _get_sql_url() -> str:
-    url = os.getenv("SQL_URL")
+    url_file = os.getenv("SQL_URL_FILE", "").strip()
+    if url_file:
+        try:
+            url = Path(url_file).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise RuntimeError("SQL_URL_FILE could not be read.") from exc
+    else:
+        url = os.getenv("SQL_URL")
     if not url:
         raise RuntimeError(
             "La variable de entorno SQL_URL es obligatoria para conectar con "
@@ -142,6 +149,7 @@ def init_db() -> None:
         UserTable,
     )
     from src.models.models import (  # noqa: F401
+        PendingSKUExit,
         SKU,
         SKUEntry,
         SKUExit,

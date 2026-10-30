@@ -24,6 +24,8 @@ def record_agent_trace(
 ) -> None:
     trace_path = _trace_path()
     trace_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # The question is accepted for compatibility with existing callers but is
+    # deliberately excluded from persistent traces to avoid retaining PII.
     trace = {
         "run_id": run_id,
         "created_at": datetime.now(UTC).isoformat(),

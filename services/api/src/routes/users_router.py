@@ -35,6 +35,7 @@ class UserCreateRequest(BaseModel):
 class UserUpdateRequest(BaseModel):
     email: str | None = None
     role: UserRole | None = None
+    tenant_id: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -42,6 +43,7 @@ class UserResponse(BaseModel):
     email: str
     is_active: bool
     role: UserRole
+    tenant_id: str | None = None
     created_at: datetime
 
 
@@ -56,6 +58,7 @@ def _to_user_response(user: User) -> UserResponse:
         email=user.email,
         is_active=user.is_active,
         role=user.role,
+        tenant_id=user.tenant_id,
         created_at=user.created_at,
     )
 
@@ -141,7 +144,7 @@ def put_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     updates = payload.model_dump(exclude_none=True)
-    if current_user.role != UserRole.ADMIN and "role" in updates:
+    if current_user.role != UserRole.ADMIN and ({"role", "tenant_id"} & updates.keys()):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     try:
         user = update_user(user_id, updates)
