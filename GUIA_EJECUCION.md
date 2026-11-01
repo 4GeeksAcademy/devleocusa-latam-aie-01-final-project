@@ -67,7 +67,7 @@ En cada frontend, define `NEXT_PUBLIC_API_BASE_URL` apuntando a la URL accesible
 3. Busca por empresa, contacto o email; filtra por estado; actualiza la etapa comercial o elimina registros.
 4. La API expone `GET /leads`, `GET /leads/{id}`, `PUT /leads/{id}`, `PATCH /leads/{id}/status` y `DELETE /leads/{id}` para personal autorizado.
 
-El almacenamiento de leads sigue el patrón TinyDB local del servicio API. Para despliegues con múltiples réplicas/alta concurrencia, sustituirlo por un almacén transaccional antes de escalar; TinyDB no ofrece aislamiento de tenant ni garantías de CRM multiusuario.
+El almacenamiento de leads sigue el patrón TinyDB local del servicio API. La bandeja es compartida por el personal autorizado: el modelo actual no implementa aislamiento por tenant. Para despliegues con múltiples réplicas/alta concurrencia, sustituir TinyDB por un almacén transaccional antes de escalar.
 
 ## 5. Verificación
 

@@ -45,6 +45,8 @@ def test_public_intake_persists_valid_lead_without_auth(clean_leads_db) -> None:
     assert body["companyName"] == "Acme Commerce"
     assert body["status"] == "new"
     assert body["id"]
+    assert body["createdAt"]
+    assert body["updatedAt"]
     assert len(get_leads_table()) == 1
 
 
@@ -52,6 +54,16 @@ def test_public_intake_rejects_invalid_or_privacy_unchecked_payload(clean_leads_
     payload = _lead_payload()
     payload["privacyPolicy"] = False
     response = _client().post("/leads", json=payload)
+    assert response.status_code == 422
+    assert len(get_leads_table()) == 0
+
+
+def test_public_intake_rejects_phone_without_country_code(clean_leads_db) -> None:
+    payload = _lead_payload()
+    payload["phone"] = "213 555 0147"
+
+    response = _client().post("/leads", json=payload)
+
     assert response.status_code == 422
     assert len(get_leads_table()) == 0
 
