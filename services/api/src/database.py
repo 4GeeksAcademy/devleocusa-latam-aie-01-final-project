@@ -32,6 +32,7 @@ suppliers_table = db.table("suppliers")
 users_table = db.table("users")
 profiles_table = db.table("profiles")
 incidents_table = db.table("incidents")
+leads_table = db.table("leads")
 products_table = db.table("products")
 stock_movements_table = db.table("stock_movements")
 stock_reservations_table = db.table("stock_reservations")
@@ -64,6 +65,11 @@ def get_profiles_table() -> Table:
 def get_incidents_table() -> Table:
     """Return the incidents table handle."""
     return incidents_table
+
+
+def get_leads_table() -> Table:
+    """Return the lead intake and CRM table handle."""
+    return leads_table
 
 
 def get_products_table() -> Table:

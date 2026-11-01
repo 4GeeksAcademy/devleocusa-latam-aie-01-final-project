@@ -44,6 +44,8 @@ export function ContactForm() {
   const [form, setForm] = useState<FormState>(initialState);
   const [errors, setErrors] = useState<FormErrors>({});
   const [successMessage, setSuccessMessage] = useState<string>("");
+  const [submitError, setSubmitError] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const remainingComments = 500 - form.comments.length;
   const showLowVolumeWarning = form.monthlyVolume === "0-100" && form.productType !== "";
@@ -117,7 +119,7 @@ export function ContactForm() {
     [],
   );
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const nextErrors = validateForm(form);
@@ -128,18 +130,36 @@ export function ContactForm() {
       return;
     }
 
-    setSuccessMessage(
-      "¡Gracias por tu interés en TrackFlow! Hemos recibido tu solicitud. Nuestro equipo comercial revisará tu información y te contactará en las próximas 24-48 horas para agendar una llamada y conocer tus necesidades logísticas en detalle. Si tienes alguna consulta urgente, escríbenos directamente a comercial@trackflow.com",
-    );
-
-    setForm(initialState);
-    setErrors({});
+    setIsSubmitting(true);
+    setSubmitError("");
+    setSuccessMessage("");
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}/leads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!response.ok) {
+        throw new Error(response.status === 422
+          ? "Revisa los datos del formulario e inténtalo de nuevo."
+          : "No se pudo enviar tu solicitud. Inténtalo de nuevo más tarde.");
+      }
+      setSuccessMessage("Hemos recibido tu solicitud. Nuestro equipo comercial revisará tu información y te contactará pronto.");
+      setForm(initialState);
+      setErrors({});
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "No fue posible enviar la solicitud. Revisa tu conexión.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleReset = () => {
     setForm(initialState);
     setErrors({});
     setSuccessMessage("");
+    setSubmitError("");
   };
 
   const toggleService = (service: ServiceOption) => {
@@ -181,6 +201,12 @@ export function ContactForm() {
               </a>
             </p>
           </div>
+        ) : null}
+
+        {submitError ? (
+          <p className="mb-6 rounded-lg border border-red-500/40 bg-red-400/10 p-4 text-sm text-red-200" role="alert">
+            {submitError}
+          </p>
         ) : null}
 
         {showLowVolumeWarning ? (
@@ -475,9 +501,10 @@ export function ContactForm() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="submit"
+              disabled={isSubmitting}
               className="rounded-md bg-amber-400 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
             >
-              Enviar solicitud
+              {isSubmitting ? "Enviando…" : "Enviar solicitud"}
             </button>
             <button
               type="reset"
