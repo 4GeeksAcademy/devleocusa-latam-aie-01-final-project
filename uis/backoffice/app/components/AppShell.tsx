@@ -38,11 +38,21 @@ export function AppShell({ children }: AppShellProps) {
             <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">TrackFlow</p>
             <h1 className="mt-2 text-lg font-semibold">Backoffice</h1>
           </div>
-          <SidebarNav />
+          <details className="lg:hidden">
+            <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300">
+              Abrir navegación
+            </summary>
+            <div className="mt-3 max-h-[55vh] overflow-y-auto pr-1">
+              <SidebarNav />
+            </div>
+          </details>
+          <div className="hidden lg:block">
+            <SidebarNav />
+          </div>
           <button
             type="button"
             onClick={handleLogout}
-            className="mt-6 inline-flex w-full justify-center rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-700"
+            className="mt-6 inline-flex w-full justify-center rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
           >
             Cerrar sesión
           </button>

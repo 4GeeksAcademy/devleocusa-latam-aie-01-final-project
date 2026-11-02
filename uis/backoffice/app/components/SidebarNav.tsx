@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { href: "/candidaturas", label: "Candidaturas" },
   { href: "/leads", label: "Leads" },
   { href: "/operaciones", label: "Operaciones" },
+  { href: "/operaciones/inventario", label: "Inventario operativo" },
   { href: "/backoffice/inventory/products", label: "Productos / SKU" },
   { href: "/backoffice/inventory/orders", label: "─ Historial de Órdenes" },
   { href: "/backoffice/inventory/orders/inbound", label: "─ Registrar Entrada" },
@@ -24,27 +25,27 @@ const navItems: NavItem[] = [
   { href: "/knowledge", label: "📚 Base de Conocimiento" },
   { href: "/rfp", label: "📥 Recepción de RFPs" },
   { href: "/telemetry", label: "📡 Radar de Telemetría" },
+  { href: "/reporting", label: "Reporting ejecutivo" },
 ];
 
 export function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Navegacion dashboard">
+    <nav aria-label="Navegación del dashboard">
       <ul className="space-y-2 text-sm">
         {navItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(`${item.href}/`));
+          const isActive = pathname === item.href;
 
           return (
             <li key={item.href}>
               <Link
                 href={item.href}
+                aria-current={isActive ? "page" : undefined}
                 className={
                   isActive
-                    ? "block rounded-lg bg-slate-800 px-3 py-2 font-medium text-white"
-                    : "block rounded-lg px-3 py-2 text-slate-300 hover:bg-slate-800 hover:text-white"
+                    ? "block rounded-lg bg-slate-800 px-3 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+                    : "block rounded-lg px-3 py-2 text-slate-300 hover:bg-slate-800 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
                 }
               >
                 {item.label}

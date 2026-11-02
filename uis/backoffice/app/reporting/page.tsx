@@ -134,6 +134,7 @@ export default function ReportingPage() {
   const [report, setReport] = useState<ReportingData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -162,7 +163,7 @@ export default function ReportingPage() {
 
     void loadReport();
     return () => controller.abort();
-  }, []);
+  }, [retryCount]);
 
   const warehouseEntries = useMemo(() => {
     return Object.entries(report?.volumen_envios?.por_almacen ?? {}).sort(
@@ -176,7 +177,25 @@ export default function ReportingPage() {
   const costBreakdown = Object.entries(report?.operational_cost?.breakdown ?? {});
 
   if (loading) return <LoadingState />;
-  if (error) return <EmptyState message={`No se pudo cargar el reporte: ${error}`} />;
+  if (error) {
+    return (
+      <div className="mx-auto max-w-7xl rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center" role="alert">
+        <p className="text-sm font-semibold text-rose-900">No se pudo cargar el reporte</p>
+        <p className="mt-2 text-sm text-rose-800">{error}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            setRetryCount((count) => count + 1);
+          }}
+          className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
   if (!report) return <EmptyState message="Ejecuta el pipeline para generar el primer reporte ejecutivo." />;
 
   const period = report.periodo ? formatDate(report.periodo) : DEFAULT_PERIOD;

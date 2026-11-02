@@ -57,6 +57,7 @@ def fresh_db():
     from src.database import (
         db,
         get_users_table,
+        get_leads_table,
         get_profiles_table,
         get_products_table,
         get_stock_movements_table,
@@ -67,6 +68,7 @@ def fresh_db():
 
     # Wipe all tables to guarantee clean state
     get_users_table().truncate()
+    get_leads_table().truncate()
     get_profiles_table().truncate()
     get_products_table().truncate()
     get_stock_movements_table().truncate()
