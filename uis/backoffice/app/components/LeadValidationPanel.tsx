@@ -15,9 +15,11 @@ export function LeadValidationPanel() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<LeadStatus | "all">("all");
   const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [pendingStatus, setPendingStatus] = useState<Partial<Record<string, LeadStatus>>>({});
 
   const loadLeads = useCallback(async () => {
     setLoading(true);
@@ -53,18 +55,48 @@ export function LeadValidationPanel() {
     });
   }, [leads, query, statusFilter]);
 
-  const handleStatusChange = async (lead: LeadRecord, status: LeadStatus) => {
-    setBusyId(lead.id);
+  const hasPendingChanges = useMemo(() => {
+    return Object.entries(pendingStatus).some(([leadId, status]) => {
+      const lead = leads.find((item) => item.id === leadId);
+      return lead ? status !== undefined && status !== lead.status : false;
+    });
+  }, [leads, pendingStatus]);
+
+  const handleDraftChange = (lead: LeadRecord, status: LeadStatus) => {
+    setPendingStatus((current) => {
+      const next = { ...current };
+      if (status === lead.status) {
+        delete next[lead.id];
+      } else {
+        next[lead.id] = status;
+      }
+      return next;
+    });
+  };
+
+  const handleApplyAll = async () => {
+    const entries = Object.entries(pendingStatus).filter(([leadId, status]) => {
+      const lead = leads.find((item) => item.id === leadId);
+      return lead ? status !== undefined && status !== lead.status : false;
+    });
+    if (entries.length === 0) return;
+    setApplying(true);
     setError("");
     setNotice("");
     try {
-      const updated = await updateLeadStatus(lead.id, status);
-      setLeads((current) => current.map((item) => item.id === updated.id ? updated : item));
-      setNotice(`Estado actualizado: ${statusLabels[status]}.`);
-    } catch (updateError) {
-      setError(updateError instanceof Error ? updateError.message : "No se pudo actualizar el estado.");
+      let appliedCount = 0;
+      for (const [leadId, status] of entries) {
+        if (status === undefined) continue;
+        await updateLeadStatus(leadId, status);
+        appliedCount += 1;
+      }
+      setPendingStatus({});
+      await loadLeads();
+      setNotice(`${appliedCount} cambio(s) aplicado(s). La lista se actualizó.`);
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : "No se pudieron aplicar los cambios.");
     } finally {
-      setBusyId(null);
+      setApplying(false);
     }
   };
 
@@ -75,6 +107,11 @@ export function LeadValidationPanel() {
     setNotice("");
     try {
       await deleteLead(lead.id);
+      setPendingStatus((current) => {
+        const next = { ...current };
+        delete next[lead.id];
+        return next;
+      });
       setLeads((current) => current.filter((item) => item.id !== lead.id));
       setNotice("Prospecto eliminado.");
     } catch (deleteError) {
@@ -91,9 +128,9 @@ export function LeadValidationPanel() {
           <h2 className="text-xl font-semibold text-slate-900">Prospectos recibidos</h2>
           <p className="mt-1 text-sm text-slate-600">Consulta solicitudes y registra su avance comercial.</p>
         </div>
-        <button type="button" onClick={() => void loadLeads()} disabled={loading}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700 disabled:opacity-60">
-          {loading ? "Actualizando…" : "Actualizar lista"}
+        <button type="button" onClick={() => void handleApplyAll()} disabled={!hasPendingChanges || applying || loading}
+          className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700 disabled:opacity-60">
+          {applying ? "Aplicando…" : "Aplicar cambios"}
         </button>
       </div>
 
@@ -142,12 +179,12 @@ export function LeadValidationPanel() {
               </dl>
               <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
                 <label className="text-sm font-medium text-slate-700">Estado
-                  <select value={lead.status} disabled={busyId === lead.id} onChange={(event) => void handleStatusChange(lead, event.target.value as LeadStatus)}
+                  <select value={pendingStatus[lead.id] ?? lead.status} disabled={applying || busyId === lead.id} onChange={(event) => handleDraftChange(lead, event.target.value as LeadStatus)}
                     className="ml-2 rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700 disabled:opacity-60">
                     {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
-                <button type="button" disabled={busyId === lead.id} onClick={() => void handleDelete(lead)}
+                <button type="button" disabled={applying || busyId === lead.id} onClick={() => void handleDelete(lead)}
                   className="rounded-lg border border-red-300 px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-60">
                   Eliminar
                 </button>

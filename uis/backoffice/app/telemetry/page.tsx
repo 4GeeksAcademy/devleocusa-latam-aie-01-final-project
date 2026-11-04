@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getApiBaseUrl } from "@/services/authApi";
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -97,7 +98,6 @@ function ErrorBanner({ message }: { message: string }) {
       className="rounded-xl border border-red-300 bg-red-50 p-6 text-center"
       role="alert"
     >
-      <span className="text-3xl" aria-hidden>⚠</span>
       <p className="mt-2 text-sm font-medium text-red-800">
         No se pudieron cargar los datos de telemetría
       </p>
@@ -114,14 +114,9 @@ export default function TelemetryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const apiBase =
-      (
-        process.env as Record<string, string | undefined>
-      ).NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-
     let cancelled = false;
 
-    fetch(`${apiBase}/telemetry/report`)
+    fetch(`${getApiBaseUrl()}/telemetry/report`)
       .then<ReportData>((res) => {
         if (!res.ok) {
           throw new Error(`HTTP ${res.status} — ${res.statusText}`);

@@ -189,7 +189,7 @@ export default function OutboundOrderPage() {
           Registrar Salida (Outbound)
         </h1>
         <p className="mt-1 text-sm text-slate-600">
-          Reduce el stock de un producto. El sistema valida disponibilidad
+          Reduce el stock de un producto. El sistema válida disponibilidad
           antes y durante el envío.
         </p>
       </div>

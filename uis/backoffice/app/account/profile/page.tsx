@@ -46,7 +46,7 @@ function getReadableErrorMessage(error: unknown): string {
     return error.message;
   }
 
-  return 'Ocurrio un error inesperado. Intenta nuevamente.';
+  return 'Ocurrió un error inesperado. Intenta nuevamente.';
 }
 
 async function parseApiError(response: Response, fallback: string): Promise<string> {
@@ -214,14 +214,14 @@ export default function AccountProfilePage() {
   return (
     <section className="mx-auto w-full max-w-2xl space-y-6">
       <header className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Gestion de usuario</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Gestión de usuario</h2>
         <p className="text-sm text-slate-600">
           Revisa y actualiza tus datos de contacto. El email no se edita desde esta vista.
         </p>
         <p className="text-sm text-slate-600">
           Para actualizar tu clave, ve a{' '}
           <Link href="/account/change-password" className="font-medium text-sky-700 hover:text-sky-800 hover:underline">
-            Cambiar contrasena
+            Cambiar contraseña
           </Link>
           .
         </p>
@@ -267,7 +267,7 @@ export default function AccountProfilePage() {
 
             <div className="space-y-1">
               <label htmlFor="phone" className="text-sm font-medium text-slate-700">
-                Telefono
+                Teléfono
               </label>
               <input
                 id="phone"
@@ -284,7 +284,7 @@ export default function AccountProfilePage() {
 
             <div className="space-y-1">
               <label htmlFor="address" className="text-sm font-medium text-slate-700">
-                Direccion
+                Dirección
               </label>
               <input
                 id="address"
@@ -295,7 +295,7 @@ export default function AccountProfilePage() {
                 value={draftValues.address}
                 onChange={(event) => handleChange('address', event.target.value)}
                 className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-300 transition focus:border-sky-500 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-100"
-                placeholder="Direccion de contacto"
+                placeholder="Dirección de contacto"
               />
             </div>
 

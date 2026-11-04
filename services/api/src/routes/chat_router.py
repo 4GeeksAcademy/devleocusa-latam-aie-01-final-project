@@ -62,7 +62,7 @@ class InterruptRequest(BaseModel):
     new_input: str = Field(min_length=1, max_length=1000)
 
 
-async def _run_generation(graph: Any, session_id: str, user_id: str, question: str,
+async def _run_generation(graph: Any, run_id: str, user_id: str, question: str,
                           token_queue: asyncio.Queue[str], cancel_signal: threading.Event,
                           control: dict[str, Any], stopped: asyncio.Event) -> dict[str, Any]:
     """Consume the existing graph while its synchronous model streams answer deltas."""
@@ -80,7 +80,7 @@ async def _run_generation(graph: Any, session_id: str, user_id: str, question: s
     control_token = stream_control_context.set(control)
     explicit_token = stream_context_explicit.set(True)
     try:
-        return await invoke_agent(graph, question, session_id, user_id)
+        return await invoke_agent(graph, question, run_id, user_id)
     finally:
         stream_callback_context.reset(callback_token)
         stream_cancel_context.reset(cancel_token)
@@ -101,7 +101,13 @@ async def _produce_turn(graph: Any, session_id: str, user_id: str, text: str) ->
     control: dict[str, Any] = {"close_stream": None}
     stopped = asyncio.Event()
     generation = asyncio.create_task(
-        _run_generation(graph, session_id, user_id, text, token_queue, cancel_signal, control, stopped)
+        # A chat session may contain many turns, but each LangGraph checkpoint
+        # thread must represent one invocation. Reusing session_id can resume
+        # the prior completed graph and yield no node updates for this turn.
+        _run_generation(
+            graph, assistant["message_id"], user_id, text,
+            token_queue, cancel_signal, control, stopped,
+        )
     )
     _turn_controls[session_id] = control
     _turn_generations[session_id] = generation
@@ -154,6 +160,23 @@ async def _produce_turn(graph: Any, session_id: str, user_id: str, text: str) ->
                 "data": {"session_id": session_id, "message_id": assistant["message_id"],
                          "token": final_answer, "sequence": sequence},
             })
+        if not text_so_far.strip():
+            logger.error(
+                "Chat agent returned an empty answer (session_id=%s, message_id=%s)",
+                session_id,
+                assistant["message_id"],
+            )
+            store.update_message(assistant["message_id"], text="", status="failed")
+            store.set_session_status(session_id, "active")
+            await chat_pubsub.publish(session_id, {
+                "event": "chat_error",
+                "data": {
+                    "session_id": session_id,
+                    "message_id": assistant["message_id"],
+                    "message": "No se pudo generar una respuesta. Inténtalo de nuevo.",
+                },
+            })
+            return
         store.update_message(assistant["message_id"], text=text_so_far, status="completed")
         store.set_session_status(session_id, "active")
         await chat_pubsub.publish(session_id, {
@@ -215,27 +238,35 @@ async def _produce_turn(graph: Any, session_id: str, user_id: str, text: str) ->
             _turn_cancellations.pop(session_id, None)
 
 
-async def _start_turn(graph: Any, session_id: str, user_id: str, text: str) -> None:
-    """Ensure one agent producer per session across all subscriber sockets."""
+async def _start_turn(
+    graph: Any, session_id: str, user_id: str, text: str, *, interrupt: bool = False
+) -> None:
+    """Run turns sequentially; only an explicit interrupt replaces active work."""
     turn_lock = _session_turn_locks.setdefault(session_id, asyncio.Lock())
     async with turn_lock:
         active = _active_producers.get(session_id)
         if active and not active.done():
-            cancel = _turn_cancellations.get(session_id)
-            if cancel:
-                cancel.set()
-            control = _turn_controls.get(session_id, {})
-            close_stream = control.get("close_stream")
-            if callable(close_stream):
-                with suppress(Exception):
-                    close_stream()
-            generation = _turn_generations.get(session_id)
-            if generation and not generation.done():
+            if interrupt:
+                cancel = _turn_cancellations.get(session_id)
+                if cancel:
+                    cancel.set()
+                control = _turn_controls.get(session_id, {})
+                close_stream = control.get("close_stream")
+                if callable(close_stream):
+                    with suppress(Exception):
+                        close_stream()
+                generation = _turn_generations.get(session_id)
+                if generation and not generation.done():
+                    with suppress(asyncio.CancelledError, Exception):
+                        await generation
+                active.cancel()
+                with suppress(asyncio.CancelledError):
+                    await active
+            else:
+                # A normal follow-up must not silently interrupt a response.
+                # Wait for the active producer, then start this turn.
                 with suppress(asyncio.CancelledError, Exception):
-                    await generation
-            active.cancel()
-            with suppress(asyncio.CancelledError):
-                await active
+                    await active
         task = asyncio.create_task(_produce_turn(graph, session_id, user_id, text))
         _active_producers[session_id] = task
     try:
@@ -302,9 +333,9 @@ async def chat_websocket(websocket: WebSocket, session_id: str) -> None:
 
     turn_tasks: set[asyncio.Task[None]] = set()
 
-    def schedule_turn(text: str) -> None:
+    def schedule_turn(text: str, *, interrupt: bool = False) -> None:
         task = asyncio.create_task(_start_turn(
-            agent_graph, session_id, str(user.id), text
+            agent_graph, session_id, str(user.id), text, interrupt=interrupt
         ))
         turn_tasks.add(task)
         task.add_done_callback(turn_tasks.discard)
@@ -326,7 +357,7 @@ async def chat_websocket(websocket: WebSocket, session_id: str) -> None:
                         "event": "interrupt_requested",
                         "data": {"session_id": session_id, "new_input": request.new_input},
                     })
-                    schedule_turn(request.new_input)
+                    schedule_turn(request.new_input, interrupt=True)
                 else:
                     await websocket.send_json({"event": "chat_error", "data": {"session_id": session_id, "message": "Evento no soportado."}})
             except (ValidationError, ValueError) as error:

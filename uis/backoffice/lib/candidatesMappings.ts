@@ -9,9 +9,9 @@ export const STATUS_LABELS: Record<CandidateStatus, string> = {
 
 export const STAGE_LABELS: Record<CandidateStage, string> = {
   pending: 'Pendiente',
-  review: 'Revision',
+  review: 'Revisión',
   personal_interview: 'Entrevista personal',
-  technical_interview: 'Entrevista tecnica',
+  technical_interview: 'Entrevista técnica',
   offer_presented: 'Oferta presentada',
 };
 

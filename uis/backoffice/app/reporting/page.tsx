@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getSessionToken } from "@/services/authApi";
 
 // The API currently returns the legacy Spanish contract for three KPIs and
 // the English fields added by the executive KPI pipeline for the remaining two.
@@ -141,8 +142,9 @@ export default function ReportingPage() {
 
     async function loadReport() {
       try {
+        const token = getSessionToken();
         const response = await fetch(`${getApiBaseUrl()}/reporting/kpis?limit=1`, {
-          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           signal: controller.signal,
         });
         if (!response.ok) {
@@ -173,7 +175,7 @@ export default function ReportingPage() {
 
   const maxWarehouseVolume = Math.max(...warehouseEntries.map(([, value]) => value), 1);
   const deliveryRate = clamp(report?.tasa_entrega_tiempo?.porcentaje ?? 0);
-  const satisfactionScore = clamp(report?.customer_satisfaction?.score ?? 0);
+  const satisfactionScore = clamp((report?.customer_satisfaction?.score ?? 0) * 10);
   const costBreakdown = Object.entries(report?.operational_cost?.breakdown ?? {});
 
   if (loading) return <LoadingState />;
@@ -292,7 +294,7 @@ export default function ReportingPage() {
         <MetricCard
           title="Satisfacción del cliente"
           period={period}
-          value={report.customer_satisfaction?.score === undefined ? "N/D" : formatNumber(report.customer_satisfaction.score, 1)}
+          value={report.customer_satisfaction?.score === undefined ? "N/D" : formatNumber(satisfactionScore, 0)}
           unit="/ 100"
           accent="bg-violet-500"
         >

@@ -40,8 +40,6 @@ COMPANY_NAME: str = "TrackFlow"
 # Default path to the knowledge base corpus
 DEFAULT_CORPUS_DIR: Path = Path(__file__).resolve().parents[2] / "docs" / "company-knowledge-base"
 
-# Embedding dimension for text-embedding-3-small
-EMBEDDING_DIMENSION: int = 1536
 
 
 # ── Embeddings client ──────────────────────────────────────────────────
@@ -227,19 +225,8 @@ def setup(corpus_dir: Optional[Path] = None) -> dict:
     # 3. Connect to Qdrant
     qdrant = QdrantClient(url=QDRANT_URL)
 
-    # 4. Drop and recreate collection (idempotent clean-and-reload)
-    if qdrant.collection_exists(COLLECTION_NAME):
-        qdrant.delete_collection(COLLECTION_NAME)
-
-    qdrant.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=VectorParams(
-            size=EMBEDDING_DIMENSION,
-            distance=Distance.COSINE,
-        ),
-    )
-
-    # 5. Embed all chunks
+    # 4. Embed all chunks before replacing the collection. Provider gateways
+    # can return a different dimension than the model's default.
     points: list[PointStruct] = []
     for chunk in all_chunks:
         vector = embed(chunk["text"])
@@ -251,6 +238,22 @@ def setup(corpus_dir: Optional[Path] = None) -> dict:
                 payload=chunk,
             )
         )
+
+    embedding_dimension = len(points[0].vector)
+    if not embedding_dimension or any(len(point.vector) != embedding_dimension for point in points):
+        raise ValueError("Embedding provider returned vectors with inconsistent dimensions.")
+
+    # 5. Drop and recreate collection using the actual embedding dimension.
+    if qdrant.collection_exists(COLLECTION_NAME):
+        qdrant.delete_collection(COLLECTION_NAME)
+
+    qdrant.create_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(
+            size=embedding_dimension,
+            distance=Distance.COSINE,
+        ),
+    )
 
     # 6. Insert into Qdrant (batch for efficiency)
     BATCH_SIZE = 50

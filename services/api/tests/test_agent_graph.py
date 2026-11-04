@@ -197,14 +197,30 @@ def test_semantic_scope_blocks_personal_and_redirects_general_requests(
     assert "TrackFlow" in result["answer"]
 
 
-def test_scope_classifier_failure_redirects_without_tools() -> None:
+def test_scope_classifier_failure_uses_rag_for_trackflow_sla_question() -> None:
+    calls: list[str] = []
+    graph = build_agent_graph(
+        classify_fn=lambda _question: (_ for _ in ()).throw(RuntimeError("classifier unavailable")),
+        retrieve_fn=lambda question: calls.append(question)
+        or [{"source": "trackflow-sla-delivery.es.md", "text": "El SLA comprometido es 90% de entregas a tiempo por mes."}],
+        generate_fn=lambda _question, context: "El SLA comprometido es 90% de entregas a tiempo por mes.",
+    )
+
+    result = graph.invoke({"question": "¿Cuáles son los SLAs de entrega?"})
+
+    assert "90%" in result["answer"]
+    assert calls == ["¿Cuáles son los SLAs de entrega?"]
+    assert not result.get("guardrail_event")
+
+
+def test_scope_classifier_failure_redirects_unrelated_question_without_tools() -> None:
     calls: list[str] = []
     graph = build_agent_graph(
         classify_fn=lambda _question: (_ for _ in ()).throw(RuntimeError("classifier unavailable")),
         retrieve_fn=lambda _question: calls.append("retrieve") or [],
     )
 
-    result = graph.invoke({"question": "¿Cuál es la política de devoluciones?"})
+    result = graph.invoke({"question": "¿Cuál es la historia de la antigua Roma?"})
 
     assert "TrackFlow" in result["answer"]
     assert result["guardrail_event"]["category"] == "structural"

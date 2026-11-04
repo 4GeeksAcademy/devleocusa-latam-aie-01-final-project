@@ -5,6 +5,12 @@
 __pycache__/
 *.pyc
 
+# Local virtual environments (must not be copied into Linux images)
+.venv/
+venv/
+**/.venv/
+**/venv/
+
 # Environment files (contain secrets)
 .env*
 !.env.example

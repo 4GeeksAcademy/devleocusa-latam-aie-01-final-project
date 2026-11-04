@@ -81,10 +81,12 @@ def login(payload: LoginRequest) -> TokenResponse:
 
 @auth_router.get("/me", response_model=MeResponse)
 def get_me(current_user: User = Depends(get_current_user)) -> MeResponse:
-    # Try cache first — profile data changes rarely but is read on every page load
+    # Try cache first — profile data changes rarely but is read on every page load.
+    # Always refresh the role from the user record to avoid stale permissions.
     cache_key = str(current_user.id)
     cached = me_cache.get(cache_key)
     if cached is not None:
+        cached.role = current_user.role.value
         return cached  # type: ignore[return-value]
 
     profile = get_profile_by_user_id(current_user.id)

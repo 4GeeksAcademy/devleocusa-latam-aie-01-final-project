@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "TrackFlow Backoffice",
-  description: "Panel interno para operaciones y validacion de leads de TrackFlow",
+  description: "Panel interno para operaciones y validación de leads de TrackFlow",
 };
 
 export default function RootLayout({

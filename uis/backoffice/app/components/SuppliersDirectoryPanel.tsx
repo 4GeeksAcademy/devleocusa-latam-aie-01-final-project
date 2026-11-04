@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { apiFetch } from "@/services/authApi";
 
 type SupplierCountry = "Estados Unidos" | "España";
 type SupplierCategory =
@@ -27,8 +28,6 @@ type SupplierCreate = {
   tarifa: string;
   estado: SupplierStatus;
 };
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_SUPPLIERS_API_BASE_URL ?? "http://localhost:8000";
 
 const countryOptions: SupplierCountry[] = ["Estados Unidos", "España"];
 const categoryOptions: SupplierCategory[] = [
@@ -57,7 +56,7 @@ function buildSuppliersUrl(filters: { pais?: string; categoria?: string }) {
   }
 
   const query = params.toString();
-  return query ? `${API_BASE_URL}/suppliers?${query}` : `${API_BASE_URL}/suppliers`;
+  return query ? `/suppliers?${query}` : "/suppliers";
 }
 
 export function SuppliersDirectoryPanel() {
@@ -92,11 +91,10 @@ export function SuppliersDirectoryPanel() {
       setError(null);
 
       try {
-        const response = await fetch(buildSuppliersUrl(activeFilters), {
+        // `/suppliers` exige autenticación: sin el token de sesión la API
+        // responde 401 y el directorio se veía vacío.
+        const response = await apiFetch(buildSuppliersUrl(activeFilters), {
           method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
         });
 
         if (!response.ok) {
@@ -122,11 +120,8 @@ export function SuppliersDirectoryPanel() {
     setSubmittingCreate(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/suppliers`, {
+      const response = await apiFetch("/suppliers", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           ...createForm,
           tarifa: Number(createForm.tarifa),
@@ -140,7 +135,7 @@ export function SuppliersDirectoryPanel() {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        setCreateError(payload?.error ?? "Ocurrio un error al crear el proveedor.");
+        setCreateError(payload?.error ?? "Ocurrió un error al crear el proveedor.");
         return;
       }
 
@@ -160,7 +155,7 @@ export function SuppliersDirectoryPanel() {
     const parsedRate = Number(draftValue);
 
     if (!Number.isFinite(parsedRate) || parsedRate <= 0) {
-      setError("La tarifa debe ser un numero mayor a 0.");
+      setError("La tarifa debe ser un número mayor a 0.");
       return;
     }
 
@@ -168,11 +163,8 @@ export function SuppliersDirectoryPanel() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/suppliers/${supplier.id}/rate`, {
+      const response = await apiFetch(`/suppliers/${supplier.id}/rate`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ tarifa: parsedRate }),
       });
 
@@ -197,11 +189,8 @@ export function SuppliersDirectoryPanel() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/suppliers/${supplier.id}/status`, {
+      const response = await apiFetch(`/suppliers/${supplier.id}/status`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({ estado: nextStatus }),
       });
 
@@ -247,7 +236,7 @@ export function SuppliersDirectoryPanel() {
           </label>
 
           <label className="flex flex-col gap-2 text-sm text-slate-700">
-            Pais
+            País
             <select
               value={createForm.pais}
               onChange={(event) =>
@@ -267,7 +256,7 @@ export function SuppliersDirectoryPanel() {
           </label>
 
           <label className="flex flex-col gap-2 text-sm text-slate-700">
-            Categoria
+            Categoría
             <select
               value={createForm.categorias[0]}
               onChange={(event) =>
@@ -350,7 +339,7 @@ export function SuppliersDirectoryPanel() {
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="flex flex-col gap-2 text-sm text-slate-700">
-            Filtrar por pais
+            Filtrar por país
             <select
               value={selectedCountry}
               onChange={(event) => setSelectedCountry(event.target.value)}
@@ -366,7 +355,7 @@ export function SuppliersDirectoryPanel() {
           </label>
 
           <label className="flex flex-col gap-2 text-sm text-slate-700">
-            Filtrar por categoria
+            Filtrar por categoría
             <select
               value={selectedCategory}
               onChange={(event) => setSelectedCategory(event.target.value)}
@@ -412,7 +401,7 @@ export function SuppliersDirectoryPanel() {
                   Nombre
                 </th>
                 <th scope="col" className="px-3 py-3 font-semibold">
-                  Pais
+                  País
                 </th>
                 <th scope="col" className="px-3 py-3 font-semibold">
                   Categorias
@@ -449,7 +438,7 @@ export function SuppliersDirectoryPanel() {
                     <tr key={supplier.id} className="border-b border-slate-100 align-top">
                       <td className="px-3 py-3 font-medium text-slate-900">{supplier.nombre}</td>
                       <td className="px-3 py-3 text-slate-700">{supplier.pais}</td>
-                      <td className="px-3 py-3 text-slate-700">{supplier.categorias?.join(", ") || "Sin categorias"}</td>
+                      <td className="px-3 py-3 text-slate-700">{supplier.categorias?.join(", ") || "Sin categorías"}</td>
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
                           <input

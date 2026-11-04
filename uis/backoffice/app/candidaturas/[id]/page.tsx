@@ -110,7 +110,7 @@ export default function CandidateDetailPage() {
     return [
       { label: 'Nombre completo', value: candidate.full_name },
       { label: 'Email', value: candidate.email },
-      { label: 'Telefono', value: candidate.phone },
+      { label: 'Teléfono', value: candidate.phone },
       { label: 'Puesto', value: candidate.position },
       { label: 'LinkedIn', value: candidate.linkedin_url },
       { label: 'CV', value: candidate.cv_url },
@@ -224,7 +224,7 @@ export default function CandidateDetailPage() {
       return;
     }
 
-    const userConfirmed = window.confirm('Esta accion eliminara la candidatura. Deseas continuar?');
+    const userConfirmed = window.confirm('Esta acción eliminará la candidatura. ¿Deseas continuar?');
     if (!userConfirmed) {
       return;
     }
@@ -279,7 +279,7 @@ export default function CandidateDetailPage() {
     return (
       <Alert variant="error" title="Candidatura no encontrada">
         <div className="space-y-3">
-          <p>No se encontro informacion para la candidatura solicitada.</p>
+          <p>No se encontró información para la candidatura solicitada.</p>
           <Link
             href="/candidaturas"
             className="inline-flex rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"

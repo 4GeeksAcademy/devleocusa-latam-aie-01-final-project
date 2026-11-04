@@ -30,15 +30,15 @@ function validateRegisterForm(values: RegisterFormValues): RegisterFormErrors {
   if (!values.email.trim()) {
     errors.email = 'El email es obligatorio.';
   } else if (!isValidEmail(values.email)) {
-    errors.email = 'Ingresa un email valido.';
+    errors.email = 'Ingresa un email válido.';
   }
 
   if (!values.password) {
-    errors.password = 'La contrasena es obligatoria.';
+    errors.password = 'La contraseña es obligatoria.';
   } else if (values.password.length < 8) {
-    errors.password = 'La contrasena debe tener al menos 8 caracteres.';
+    errors.password = 'La contraseña debe tener al menos 8 caracteres.';
   } else if (getUtf8ByteLength(values.password) > 72) {
-    errors.password = 'La contrasena es demasiado larga. Usa un maximo de 72 bytes.';
+    errors.password = 'La contraseña es demasiado larga. Usa un máximo de 72 bytes.';
   }
 
   return errors;
@@ -148,7 +148,7 @@ export default function RegisterPage() {
 
           <div className="space-y-1">
             <label htmlFor="password" className="text-sm font-medium text-slate-700">
-              Contrasena
+              Contraseña
             </label>
             <input
               id="password"
@@ -191,7 +191,7 @@ export default function RegisterPage() {
 
           <div className="space-y-1">
             <label htmlFor="phone" className="text-sm font-medium text-slate-700">
-              Telefono (opcional)
+              Teléfono (opcional)
             </label>
             <input
               id="phone"
@@ -208,7 +208,7 @@ export default function RegisterPage() {
 
           <div className="space-y-1">
             <label htmlFor="address" className="text-sm font-medium text-slate-700">
-              Direccion (opcional)
+              Dirección (opcional)
             </label>
             <input
               id="address"
@@ -219,7 +219,7 @@ export default function RegisterPage() {
               value={formValues.address}
               onChange={(event) => handleFieldChange('address', event.target.value)}
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-300 transition focus:border-sky-500 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-100"
-              placeholder="Direccion de contacto"
+              placeholder="Dirección de contacto"
             />
           </div>
 
@@ -241,7 +241,7 @@ export default function RegisterPage() {
         <p className="mt-4 text-center text-sm text-slate-600">
           Ya tienes cuenta?{' '}
           <Link href="/login" className="font-medium text-sky-700 hover:text-sky-800 hover:underline">
-            Inicia sesion
+            Inicia sesión
           </Link>
         </p>
       </div>

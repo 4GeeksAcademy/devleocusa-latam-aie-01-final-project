@@ -3,9 +3,12 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import inspect
 import json
+import logging
+import re
+import unicodedata
 from typing import Any
 
-from src.agent import routing as routing_adapter
+from src.agent import rag_adapter, routing as routing_adapter
 from src.agent.guardrails import (
     CASUAL_REDIRECT,
     JAILBREAK_RESPONSE,
@@ -40,6 +43,23 @@ InventoryLookupFn = Callable[
 
 INCIDENT_FALLBACK = "No puedo confirmar el estado de ese ticket ahora mismo."
 INVENTORY_FALLBACK = "No puedo confirmar el stock de ese producto ahora mismo."
+logger = logging.getLogger(__name__)
+
+_TRACKFLOW_KNOWLEDGE_TERMS = re.compile(
+    r"\b(?:trackflow|logistic\w*|env[ií]o\w*|entrega\w*|sla\w*|"
+    r"almac[eé]n\w*|[uú]ltima milla|carrier\w*|transportista\w*|"
+    r"incidencia\w*|devoluci[oó]n\w*|inventario|stock|cobertura|"
+    r"tarifa\w*|precio\w*|pol[ií]tica\w*|procedimiento\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_trackflow_knowledge_intent(question: str) -> bool:
+    normalized = unicodedata.normalize("NFKD", question.casefold())
+    normalized = "".join(
+        character for character in normalized if not unicodedata.combining(character)
+    )
+    return bool(_TRACKFLOW_KNOWLEDGE_TERMS.search(normalized))
 
 
 def validate_question(state: AgentState) -> dict[str, str]:
@@ -112,7 +132,20 @@ def classify_question(
             if state.get("routing_decision")
             else classify_fn(state["question"])
         )
-    except Exception:
+    except Exception as error:
+        rag_fallback = _has_trackflow_knowledge_intent(state["question"])
+        logger.warning(
+            "agent_route_classification_failed",
+            extra={"error_type": type(error).__name__, "rag_fallback": rag_fallback},
+        )
+        if rag_fallback:
+            return {
+                "sources": ["rag"],
+                "completed_sources": [],
+                "incident_query": {},
+                "inventory_query": "",
+                "route_error": "",
+            }
         return {
             "sources": [],
             "completed_sources": [],

@@ -61,19 +61,19 @@ function ResetPasswordForm() {
         </div>
 
         {!token ? (
-          <Alert variant="error" title="Enlace invalido">
-            El enlace de recuperacion no incluye un token valido o ya no es utilizable.
+          <Alert variant="error" title="Enlace inválido">
+            El enlace de recuperación no incluye un token válido o ya no es utilizable.
           </Alert>
         ) : null}
 
         {hasSubmitted ? (
-          <Alert variant="success" title="Contrasena actualizada">
+          <Alert variant="success" title="Contraseña actualizada">
             Ya puedes iniciar sesión con tu nueva contraseña.
           </Alert>
         ) : null}
 
         {errorMessage ? (
-          <Alert variant="error" title="No se pudo restablecer la contrasena">
+          <Alert variant="error" title="No se pudo restablecer la contraseña">
             {errorMessage}
           </Alert>
         ) : null}
@@ -81,7 +81,7 @@ function ResetPasswordForm() {
         <form onSubmit={handleSubmit} className="mt-4 space-y-4" noValidate>
           <div className="space-y-1">
             <label htmlFor="new-password" className="text-sm font-medium text-slate-700">
-              Nueva contrasena
+              Nueva contraseña
             </label>
             <input
               id="new-password"
@@ -100,7 +100,7 @@ function ResetPasswordForm() {
 
           <div className="space-y-1">
             <label htmlFor="confirm-password" className="text-sm font-medium text-slate-700">
-              Confirmar contrasena
+              Confirmar contraseña
             </label>
             <input
               id="confirm-password"
@@ -113,7 +113,7 @@ function ResetPasswordForm() {
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-300 transition focus:border-sky-500 focus:ring-2 disabled:cursor-not-allowed disabled:bg-slate-100"
-              placeholder="Repite la nueva contrasena"
+              placeholder="Repite la nueva contraseña"
             />
           </div>
 
@@ -122,14 +122,14 @@ function ResetPasswordForm() {
             disabled={isFormDisabled}
             className="inline-flex w-full items-center justify-center rounded-md bg-sky-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {isSubmitting ? 'Actualizando...' : 'Restablecer contrasena'}
+            {isSubmitting ? 'Actualizando...' : 'Restablecer contraseña'}
           </button>
         </form>
 
         <p className="mt-4 text-center text-sm text-slate-600">
           Volver a{' '}
           <Link href="/login" className="font-medium text-sky-700 hover:text-sky-800 hover:underline">
-            Iniciar sesion
+            Iniciar sesión
           </Link>
         </p>
       </div>

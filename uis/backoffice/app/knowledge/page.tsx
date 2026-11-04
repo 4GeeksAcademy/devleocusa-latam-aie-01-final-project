@@ -38,11 +38,13 @@ export default function KnowledgePage() {
     socketRef.current = socket;
 
     socket.onopen = () => {
+      if (socketRef.current !== socket) return;
       reconnectAttemptRef.current = 0;
       setConnected(true);
       setError(null);
     };
     socket.onmessage = (messageEvent) => {
+      if (socketRef.current !== socket) return;
       try {
         const event = JSON.parse(messageEvent.data) as { event: string; data: Record<string, unknown> };
         const data = event.data;
@@ -84,6 +86,11 @@ export default function KnowledgePage() {
             ? { ...item, status: "completed" } : item));
           setGenerating(false);
         } else if (event.event === "chat_error") {
+          const messageId = typeof data.message_id === "string" ? data.message_id : null;
+          if (messageId) {
+            setMessages((current) => current.map((item) => item.message_id === messageId
+              ? { ...item, status: "failed" } : item));
+          }
           setError(String(data.message || "Error de chat."));
           setGenerating(false);
         }
@@ -91,8 +98,11 @@ export default function KnowledgePage() {
         setError("El servidor envió un evento de chat inválido.");
       }
     };
-    socket.onerror = () => setError("No fue posible mantener la conexión del chat.");
+    socket.onerror = () => {
+      if (socketRef.current === socket) setError("No fue posible mantener la conexión del chat.");
+    };
     socket.onclose = (event) => {
+      if (socketRef.current !== socket) return;
       setConnected(false);
       if (!mountedRef.current || event.code === 1008) {
         if (event.code === 1008) setError("La sesión del chat no está autorizada; vuelve a iniciar sesión.");
@@ -121,23 +131,49 @@ export default function KnowledgePage() {
     event.preventDefault();
     const text = question.trim();
     if (!text || !socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
-    const activeGeneration = generating;
     socketRef.current.send(JSON.stringify({
-      event: activeGeneration ? "interrupt_requested" : "user_message",
-      data: activeGeneration
-        ? { session_id: sessionIdRef.current, new_input: text }
-        : { session_id: sessionIdRef.current, text },
+      event: "user_message",
+      data: { session_id: sessionIdRef.current, text },
     }));
     setQuestion("");
     setError(null);
   };
 
+  const startNewConversation = () => {
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = null;
+    const previousSocket = socketRef.current;
+    socketRef.current = null;
+    previousSocket?.close();
+
+    const newSessionId = `chat_${crypto.randomUUID()}`;
+    sessionIdRef.current = newSessionId;
+    window.localStorage.setItem("trackflow_chat_session_id", newSessionId);
+    reconnectAttemptRef.current = 0;
+    setMessages([]);
+    setGenerating(false);
+    setConnected(false);
+    setError(null);
+    connectSocketRef.current();
+  };
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">
-          📚 Base de Conocimiento TrackFlow
-        </h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-2xl font-bold text-slate-900">
+            Base de conocimiento TrackFlow
+          </h1>
+          <button
+            type="button"
+            onClick={startNewConversation}
+            disabled={!connected}
+            className="shrink-0 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Iniciar una nueva conversación"
+          >
+            Nueva conversación
+          </button>
+        </div>
         <p className="mt-2 text-slate-600">
           Consulta la base de conocimiento de TrackFlow en lenguaje natural.
           Recibe respuestas sobre políticas, procedimientos, servicios y más.
@@ -193,7 +229,7 @@ export default function KnowledgePage() {
       {/* Error State */}
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
-          <p className="font-medium">⚠️ Error</p>
+          <p className="font-medium">Error</p>
           <p className="mt-1 text-sm">{error}</p>
         </div>
       )}
@@ -206,7 +242,7 @@ export default function KnowledgePage() {
             {messages.map((message) => (
               <div key={message.message_id} className={`rounded-lg p-4 ${message.role === "user" ? "ml-10 bg-cyan-50" : "mr-10 bg-slate-50"}`}>
                 <p className="mb-1 text-xs font-semibold uppercase text-slate-500">{message.role === "user" ? "Tú" : "Agente"}</p>
-                <p className="whitespace-pre-wrap text-slate-800">{message.text}{message.status === "interrupted" ? <span className="ml-2 text-xs font-semibold text-amber-700">(interrumpido)</span> : null}</p>
+                <p className="whitespace-pre-wrap text-slate-800">{message.text}{message.status === "interrupted" ? <span className="ml-2 text-xs font-semibold text-amber-700">(interrumpido)</span> : message.status === "failed" ? <span className="ml-2 text-xs font-semibold text-red-700">(no se pudo generar)</span> : null}</p>
               </div>
             ))}
           </div>

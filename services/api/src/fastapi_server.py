@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.database import init_db
 from src.env_loader import load_env_if_available
+from src.bootstrap import run_demo_bootstrap
 from src.agent.runtime import agent_graph_runtime
 from src.agent.rate_limit import create_agent_rate_limiter
 from src.routes.auth_router import auth_router
@@ -40,6 +41,7 @@ async def lifespan(_app: FastAPI):
     load_env_if_available()
     validate_production_security()
     init_db()
+    run_demo_bootstrap()
     agent_rate_limiter = create_agent_rate_limiter()
     await agent_rate_limiter.verify_backend()
     _app.state.agent_rate_limiter = agent_rate_limiter

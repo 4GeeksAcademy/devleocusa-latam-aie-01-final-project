@@ -47,8 +47,17 @@ logger = logging.getLogger(__name__)
 #: Upload size guard (RFPs are text PDFs; anything bigger is suspicious).
 MAX_PDF_BYTES: int = 25 * 1024 * 1024  # 25 MB
 
-#: Repo-root/data/raw — runtime artifact directory for received documents.
-RAW_DATA_DIR: Path = Path(__file__).resolve().parents[4] / "data" / "raw"
+#: Runtime artifact directory for received documents. The source tree is
+#: mounted at /app in Docker, while local execution uses the repository root.
+_source_path = Path(__file__).resolve()
+try:
+    _repo_root = _source_path.parents[4]
+except IndexError:
+    _repo_root = _source_path.parents[2]
+
+RAW_DATA_DIR: Path = Path(
+    os.getenv("RFP_RAW_DATA_DIR", str(_repo_root / "data" / "raw"))
+)
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 

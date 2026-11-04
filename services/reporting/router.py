@@ -112,6 +112,10 @@ def _extract_kpi(result: dict[str, Any]) -> dict[str, Any] | None:
             "volumen_envios": kpi_data.get("volumen_envios"),
             "tasa_entrega_tiempo": kpi_data.get("tasa_entrega_tiempo"),
             "devoluciones": kpi_data.get("devoluciones"),
+            # KPIs ejecutivos adicionales. Son opcionales: si el pipeline no
+            # los calcula, el modelo los deja en None en lugar de fallar.
+            "operational_cost": kpi_data.get("operational_cost"),
+            "customer_satisfaction": kpi_data.get("customer_satisfaction"),
         }
     return None
 

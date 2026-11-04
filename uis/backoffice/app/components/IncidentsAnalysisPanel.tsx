@@ -279,7 +279,7 @@ export function IncidentsAnalysisPanel() {
               }}
               className="rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100"
             >
-              Reintentar analisis
+              Reintentar análisis
             </button>
             <Link
               href="/"
@@ -316,7 +316,7 @@ export function IncidentsAnalysisPanel() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <article className="rounded-xl border border-slate-200 p-4">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Desglose por categoria</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">Desglose por categoría</h2>
               {categoryItems.length === 0 ? (
                 <p className="mt-3 text-sm text-slate-500">Sin categorías válidas para mostrar.</p>
               ) : (

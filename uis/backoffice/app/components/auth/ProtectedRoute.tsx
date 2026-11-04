@@ -43,7 +43,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   if (!canRender) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <Spinner label="Verificando sesion..." />
+        <Spinner label="Verificando sesión..." />
       </div>
     );
   }

@@ -16,7 +16,7 @@ export default function Home() {
             href="/candidaturas"
             className="inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
           >
-            Ir a gestion de candidaturas
+            Ir a gestión de candidaturas
           </Link>
         </div>
       </section>

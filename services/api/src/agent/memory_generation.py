@@ -198,11 +198,14 @@ class _JsonAnswerStream:
         self.callback = callback
         self.buffer = ""
         self.started = False
+        self.finished = False
         self.escaped = False
         self.unicode_remaining = 0
         self.unicode_buffer = ""
 
     def feed(self, chunk: str) -> None:
+        if self.finished:
+            return
         self.buffer += chunk
         if not self.started:
             marker = re.search(r'"answer"\s*:\s*"', self.buffer)
@@ -235,6 +238,7 @@ class _JsonAnswerStream:
                 self.escaped = True
             elif character == '"':
                 self.buffer = ""
+                self.finished = True
                 break
             else:
                 output.append(character)

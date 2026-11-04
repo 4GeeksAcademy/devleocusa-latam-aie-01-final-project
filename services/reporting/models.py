@@ -119,6 +119,28 @@ class Devoluciones(BaseModel):
     )
 
 
+class OperationalCost(BaseModel):
+    """Coste operativo total del periodo, con desglose por concepto."""
+
+    total: float = Field(..., ge=0, description="Coste operativo total del periodo.")
+    currency: str = Field("EUR", description="Divisa del importe (ISO 4217).")
+    breakdown: dict[str, float] = Field(
+        default_factory=dict,
+        description="Desglose del coste por concepto (transporte, almacenaje, ultima milla...).",
+    )
+
+
+class CustomerSatisfaction(BaseModel):
+    """Satisfaccion del cliente del periodo (CSAT 0-10)."""
+
+    score: float = Field(..., ge=0.0, le=10.0, description="Puntuacion media de satisfaccion (0-10).")
+    level: str = Field(..., description="Nivel cualitativo: 'alto', 'medio' o 'bajo'.")
+    penalties: dict[str, int] = Field(
+        default_factory=dict,
+        description="Penalizaciones que restan puntuacion (entregas tardias, devoluciones).",
+    )
+
+
 class ExecutiveKPIs(BaseModel):
     """Registro completo de KPIs ejecutivos, equivalente al contrato
     definido en ``CONTEXT-trackflow-briefing.es.md`` y ``PIPELINE_DESIGN.md``."""
@@ -144,6 +166,14 @@ class ExecutiveKPIs(BaseModel):
     devoluciones: Devoluciones = Field(
         ..., description="Metricas de devoluciones (volumen y tasa)."
     )
+    # Opcionales: los registros historicos no los incluyen y deben seguir
+    # validando sin migracion de datos.
+    operational_cost: OperationalCost | None = Field(
+        None, description="Coste operativo del periodo con desglose por concepto."
+    )
+    customer_satisfaction: CustomerSatisfaction | None = Field(
+        None, description="Satisfaccion del cliente del periodo (CSAT 0-10)."
+    )
 
     class Config:
         json_schema_extra = {
@@ -164,6 +194,20 @@ class ExecutiveKPIs(BaseModel):
                 "devoluciones": {
                     "volumen": 2,
                     "tasa_porcentaje": 100.0,
+                },
+                "operational_cost": {
+                    "total": 48250.75,
+                    "currency": "EUR",
+                    "breakdown": {
+                        "transporte": 26400.0,
+                        "almacenaje": 12850.5,
+                        "ultima_milla": 9000.25,
+                    },
+                },
+                "customer_satisfaction": {
+                    "score": 8.6,
+                    "level": "alto",
+                    "penalties": {"late_deliveries": 2, "returns": 1},
                 },
             }
         }

@@ -42,7 +42,7 @@ export default function LoginPage() {
 
       router.replace('/');
     } catch (error) {
-      const message = (error as Error).message || 'No fue posible iniciar sesion.';
+      const message = (error as Error).message || 'No fue posible iniciar sesión.';
       setErrorMessage(message);
 
       // Map error messages to normalized failure_reason enum
@@ -65,7 +65,7 @@ export default function LoginPage() {
     <section className="flex min-h-[calc(100vh-4rem)] items-center justify-center py-8">
       <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="mb-6 space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Iniciar sesion</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Iniciar sesión</h2>
           <p className="text-sm text-slate-600">
             Accede al Backoffice de TrackFlow para gestionar candidaturas y operaciones.
           </p>
@@ -91,7 +91,7 @@ export default function LoginPage() {
 
           <div className="space-y-1">
             <label htmlFor="password" className="text-sm font-medium text-slate-700">
-              Contrasena
+              Contraseña
             </label>
             <input
               id="password"
@@ -103,20 +103,20 @@ export default function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none ring-sky-300 transition focus:border-sky-500 focus:ring-2"
-              placeholder="Ingresa tu contrasena"
+              placeholder="Ingresa tu contraseña"
             />
             <div className="pt-1 text-right">
               <Link
                 href="/forgot-password"
                 className="text-xs font-medium text-sky-700 hover:text-sky-800 hover:underline"
               >
-                Olvide mi contrasena
+                Olvide mi contraseña
               </Link>
             </div>
           </div>
 
           {errorMessage ? (
-            <Alert variant="error" title="Error de autenticacion">
+            <Alert variant="error" title="Error de autenticación">
               {errorMessage}
             </Alert>
           ) : null}

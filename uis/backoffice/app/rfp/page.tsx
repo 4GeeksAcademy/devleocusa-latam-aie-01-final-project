@@ -18,6 +18,7 @@ const FILTERS: Array<{ value: RFPStatus | undefined; label: string }> = [
   { value: undefined, label: "Todos" },
   { value: "analizando", label: "Analizando" },
   { value: "analisis_completo", label: "Análisis completo" },
+  { value: "esperando_aprobación", label: "Esperando aprobación" },
   { value: "descartado", label: "Descartados" },
 ];
 
@@ -41,7 +42,7 @@ export default function RfpIntakePage() {
     try {
       const data = await listRfpTickets(filter);
       for (const ticket of data) seenTicketIds.current.add(ticket.id);
-      setTickets((current) => mergeTickets(current, data, filter));
+      setTickets(replaceTickets(data));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar tickets.");
@@ -58,7 +59,7 @@ export default function RfpIntakePage() {
         const data = await listRfpTickets(filter);
         if (cancelled) return;
         for (const ticket of data) seenTicketIds.current.add(ticket.id);
-        setTickets((current) => mergeTickets(current, data, filter));
+        setTickets(replaceTickets(data));
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -115,7 +116,7 @@ export default function RfpIntakePage() {
             const recovered = await listRfpTickets(filterRef.current);
             if (stopped) return;
             for (const ticket of recovered) seenTicketIds.current.add(ticket.id);
-            setTickets((current) => mergeTickets(current, recovered, filterRef.current));
+            setTickets(replaceTickets(recovered));
             setError(null);
           } catch {
             // Continue receiving live events even if the recovery request fails.
@@ -185,7 +186,7 @@ export default function RfpIntakePage() {
     <div className="mx-auto max-w-4xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">
-          📥 Recepción de RFPs
+          Recepción de RFPs
         </h1>
         <p className="mt-2 text-slate-600">
           Sube el PDF de una propuesta. El flujo agéntico lo convierte a
@@ -293,6 +294,10 @@ export default function RfpIntakePage() {
       )}
     </div>
   );
+}
+
+function replaceTickets(incoming: RFPTicketSummary[]): RFPTicketSummary[] {
+  return [...incoming].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
 }
 
 function mergeTickets(

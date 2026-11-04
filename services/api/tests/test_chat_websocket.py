@@ -195,6 +195,113 @@ def test_interrupt_waits_for_generation_shutdown_before_starting_new_turn(monkey
     assert assistants[1]["text"] == "nuevo:devolución" and assistants[1]["status"] == "completed"
 
 
+def test_follow_up_waits_for_active_turn_instead_of_interrupting(monkeypatch) -> None:
+    events: list[dict] = []
+    persisted: dict[str, dict] = {}
+    started: list[str] = []
+    release_first = asyncio.Event()
+
+    class FakeStore:
+        @staticmethod
+        def add_message(session_id, role, text, status="completed"):
+            record = {"message_id": f"{role}-{len(persisted)}", "session_id": session_id,
+                      "role": role, "text": text, "status": status}
+            persisted[record["message_id"]] = record
+            return record
+
+        @staticmethod
+        def update_message(message_id, *, text, status, sequence=None):
+            persisted[message_id].update(text=text, status=status, sequence=sequence)
+            return persisted[message_id]
+
+        @staticmethod
+        def set_session_status(*_args):
+            return None
+
+    class FakePubSub:
+        @staticmethod
+        async def publish(_session_id, event):
+            events.append(event)
+
+    class Graph:
+        pass
+
+    async def fake_invoke(_graph, question, run_id, _user_id):
+        assert run_id.startswith("assistant-")
+        started.append(question)
+        if question == "primera":
+            await release_first.wait()
+        return {"answer": f"respuesta:{question}"}
+
+    async def scenario() -> None:
+        monkeypatch.setattr(chat_module, "store", FakeStore)
+        monkeypatch.setattr(chat_module, "chat_pubsub", FakePubSub)
+        monkeypatch.setattr(chat_module, "invoke_agent", fake_invoke)
+        graph = Graph()
+        first = asyncio.create_task(
+            chat_module._start_turn(graph, "follow_up", "user", "primera")
+        )
+        while "primera" not in started:
+            await asyncio.sleep(0)
+
+        follow_up = asyncio.create_task(
+            chat_module._start_turn(graph, "follow_up", "user", "segunda")
+        )
+        await asyncio.sleep(0)
+        assert started == ["primera"]
+
+        release_first.set()
+        await asyncio.gather(first, follow_up)
+
+    asyncio.run(scenario())
+    assert started == ["primera", "segunda"]
+    assert sum(event["event"] == "generation_completed" for event in events) == 2
+    assert not any(event["event"] == "generation_interrupted" for event in events)
+
+
+def test_empty_agent_answer_is_failed_not_completed(monkeypatch) -> None:
+    events: list[dict] = []
+    persisted: dict[str, dict] = {}
+
+    class FakeStore:
+        @staticmethod
+        def add_message(session_id, role, text, status="completed"):
+            record = {"message_id": f"{role}-{len(persisted)}", "session_id": session_id,
+                      "role": role, "text": text, "status": status}
+            persisted[record["message_id"]] = record
+            return record
+
+        @staticmethod
+        def update_message(message_id, *, text, status, sequence=None):
+            persisted[message_id].update(text=text, status=status, sequence=sequence)
+            return persisted[message_id]
+
+        @staticmethod
+        def set_session_status(*_args):
+            return None
+
+    class FakePubSub:
+        @staticmethod
+        async def publish(_session_id, event):
+            events.append(event)
+
+    async def fake_invoke(*_args):
+        return {"answer": ""}
+
+    async def scenario() -> None:
+        monkeypatch.setattr(chat_module, "store", FakeStore)
+        monkeypatch.setattr(chat_module, "chat_pubsub", FakePubSub)
+        monkeypatch.setattr(chat_module, "invoke_agent", fake_invoke)
+        await chat_module._produce_turn(object(), "empty_answer", "user", "pregunta")
+
+    asyncio.run(scenario())
+
+    assistant = next(message for message in persisted.values() if message["role"] == "assistant")
+    assert assistant["status"] == "failed"
+    assert any(event["event"] == "chat_error" for event in events)
+    assert not any(event["event"] == "generation_completed" for event in events)
+
+
 def test_reconnect_snapshot_restores_streaming_partial_and_watermark() -> None:
     queue: asyncio.Queue[dict] = asyncio.Queue()
     partial = {"message_id": "assistant-1", "role": "assistant", "text": "respuesta parcial",
@@ -219,7 +326,7 @@ def test_streaming_generation_extracts_answer_and_closes_provider(monkeypatch) -
         choices = []
 
         def __iter__(self):
-            for part in ['{"answer":"Hola', ' mundo\\nTrackFlow","proposal":null}']:
+            for part in ['{"answer":"Hola', ' mundo\\nTrackFlow"', ',"proposal":null}']:
                 yield type("Event", (), {"choices": [type("Choice", (), {
                     "delta": type("Delta", (), {"content": part})()
                 })()]})()
@@ -252,3 +359,14 @@ def test_streaming_generation_extracts_answer_and_closes_provider(monkeypatch) -
     assert captured == {"closed": True, "stream": True}
     assert result.answer == "Hola mundo\nTrackFlow"
     assert "".join(tokens) == result.answer
+
+
+def test_json_answer_stream_ignores_fields_after_answer() -> None:
+    from src.agent.memory_generation import _JsonAnswerStream
+
+    tokens: list[str] = []
+    parser = _JsonAnswerStream(tokens.append)
+    parser.feed('{"answer":"Respuesta completa"')
+    parser.feed(',"proposal":{"content":"nunca mostrar"}}')
+
+    assert "".join(tokens) == "Respuesta completa"

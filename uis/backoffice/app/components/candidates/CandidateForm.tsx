@@ -27,7 +27,7 @@ function mapCandidateToForm(candidate?: Candidate): CandidateFormState {
     full_name: candidate?.full_name ?? '',
     email: candidate?.email ?? '',
     phone: candidate?.phone ?? '',
-    position: candidate?.position ?? 'Asistente de Direccion',
+    position: candidate?.position ?? 'Asistente de Dirección',
     linkedin_url: candidate?.linkedin_url ?? '',
     cv_url: candidate?.cv_url ?? '',
     experience_years:
@@ -62,7 +62,7 @@ export function CandidateForm({ mode, candidateId, initialData }: CandidateFormP
     const full_name = form.full_name.trim();
     const email = form.email.trim();
     const phone = form.phone.trim();
-    const position = form.position.trim() || 'Asistente de Direccion';
+    const position = form.position.trim() || 'Asistente de Dirección';
     const linkedin_url = form.linkedin_url.trim();
     const cv_url = form.cv_url.trim();
     const experience_years_raw = form.experience_years.trim();
@@ -82,12 +82,12 @@ export function CandidateForm({ mode, candidateId, initialData }: CandidateFormP
 
     const experience_years = Number(experience_years_raw);
     if (!Number.isFinite(experience_years) || Number.isNaN(experience_years)) {
-      setError('Anios de experiencia debe ser un numero valido.');
+      setError('Años de experiencia debe ser un número válido.');
       return null;
     }
 
     if (experience_years < 0) {
-      setError('Anios de experiencia no puede ser negativo.');
+      setError('Años de experiencia no puede ser negativo.');
       return null;
     }
 
@@ -132,7 +132,7 @@ export function CandidateForm({ mode, candidateId, initialData }: CandidateFormP
         router.refresh();
       }
     } catch (submitError) {
-      setError((submitError as Error).message || 'Ocurrio un error al guardar el candidato.');
+      setError((submitError as Error).message || 'Ocurrió un error al guardar el candidato.');
     } finally {
       setIsSubmitting(false);
     }
@@ -173,7 +173,7 @@ export function CandidateForm({ mode, candidateId, initialData }: CandidateFormP
 
           <div className="space-y-1">
             <label htmlFor="phone" className="text-sm font-medium text-slate-700">
-              Telefono
+              Teléfono
             </label>
             <input
               id="phone"
@@ -199,7 +199,7 @@ export function CandidateForm({ mode, candidateId, initialData }: CandidateFormP
 
           <div className="space-y-1">
             <label htmlFor="experience_years" className="text-sm font-medium text-slate-700">
-              Anios de experiencia
+              Años de experiencia
             </label>
             <input
               id="experience_years"

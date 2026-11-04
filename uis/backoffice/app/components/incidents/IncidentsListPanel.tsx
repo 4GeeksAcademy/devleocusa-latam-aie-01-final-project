@@ -49,8 +49,12 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
     try {
       const data = await listIncidents(activeFilters);
       setIncidents(data);
-    } catch {
-      setError("No se pudo cargar el listado de incidencias.");
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "No se pudo cargar el listado de incidencias.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -169,9 +173,9 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
 
         {!isLoading && !error && incidents.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
-            <p className="text-4xl" aria-hidden="true">
-              📭
-            </p>
+            <svg className="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18v11.25A2.25 2.25 0 0 1 18.75 21h-13.5A2.25 2.25 0 0 1 3 18.75V7.5Zm0 0 2.25-4.5h13.5L21 7.5m-18 0h5.25l1.5 3h4.5l1.5-3H21" />
+            </svg>
             <h3 className="mt-3 text-lg font-semibold text-slate-800">No hay incidencias que coincidan con estos filtros</h3>
             <p className="mt-2 text-sm text-slate-600">Ajusta los filtros o registra una nueva incidencia.</p>
           </div>
@@ -183,8 +187,8 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
               <caption className="sr-only">Listado operativo de incidencias</caption>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
-                  <th className="px-3 py-3 font-semibold">Titulo</th>
-                  <th className="px-3 py-3 font-semibold">Categoria</th>
+                  <th className="px-3 py-3 font-semibold">Título</th>
+                  <th className="px-3 py-3 font-semibold">Categoría</th>
                   <th className="px-3 py-3 font-semibold">Origen</th>
                   <th className="px-3 py-3 font-semibold">Sede</th>
                   <th className="px-3 py-3 font-semibold">Estado</th>
@@ -195,10 +199,10 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
                 {incidents.map((incident) => (
                   <tr key={incident.id} className="border-b border-slate-100 last:border-b-0">
                     <td className="px-3 py-3">
-                      <p className="font-medium text-slate-900">{incident.title || 'Sin titulo'}</p>
-                      <p className="mt-1 text-xs text-slate-500 line-clamp-2">{incident.description || 'Sin descripcion'}</p>
+                      <p className="font-medium text-slate-900">{incident.title || 'Sin título'}</p>
+                      <p className="mt-1 text-xs text-slate-500 line-clamp-2">{incident.description || 'Sin descripción'}</p>
                     </td>
-                    <td className="px-3 py-3 text-slate-700">{incident.category || 'Sin categoria'}</td>
+                    <td className="px-3 py-3 text-slate-700">{incident.category || 'Sin categoría'}</td>
                     <td className="px-3 py-3 text-slate-700">{incident.origin || 'Sin origen'}</td>
                     <td className="px-3 py-3 text-slate-700">{incident.branch || 'Sin sede'}</td>
                     <td className="px-3 py-3">
