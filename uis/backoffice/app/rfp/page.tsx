@@ -189,9 +189,7 @@ export default function RfpIntakePage() {
           Recepción de RFPs
         </h1>
         <p className="mt-2 text-slate-600">
-          Sube el PDF de una propuesta. El flujo agéntico lo convierte a
-          Markdown, clasifica si es una RFP real y descompone el trabajo por
-          departamento para Ventas.
+          Sube el PDF de una propuesta. El flujo agéntico lo clasifica y descompone.
         </p>
       </div>
 

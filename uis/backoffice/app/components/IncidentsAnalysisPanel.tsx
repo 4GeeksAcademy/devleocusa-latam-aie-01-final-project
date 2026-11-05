@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 
+import { getIncidentDisplayLabel } from "../../lib/incidentsMappings";
+
 type Summary = {
   totalRows: number;
   validRows: number;
@@ -323,7 +325,7 @@ export function IncidentsAnalysisPanel() {
                 <ul className="mt-3 space-y-2 text-sm">
                   {categoryItems.map(([category, count]) => (
                     <li key={category} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
-                      <span className="font-medium text-slate-800">{category}</span>
+                      <span className="font-medium text-slate-800">{getIncidentDisplayLabel(category)}</span>
                       <span className="text-slate-600">
                         {count} ({formatPercent(count, summary.validRows)})
                       </span>
@@ -341,7 +343,7 @@ export function IncidentsAnalysisPanel() {
                 <ul className="mt-3 space-y-2 text-sm">
                   {statusItems.map(([status, count]) => (
                     <li key={status} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
-                      <span className="font-medium capitalize text-slate-800">{status}</span>
+                      <span className="font-medium capitalize text-slate-800">{getIncidentDisplayLabel(status)}</span>
                       <span className="text-slate-600">
                         {count} ({formatPercent(count, summary.validRows)})
                       </span>

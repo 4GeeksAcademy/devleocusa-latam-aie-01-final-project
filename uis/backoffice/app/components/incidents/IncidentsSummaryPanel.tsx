@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Spinner } from "../ui/Spinner";
 import { IncidentSummary, getIncidentsSummary } from "../../../services/incidentsApi";
+import { getIncidentDisplayLabel } from "../../../lib/incidentsMappings";
 
 interface IncidentsSummaryPanelProps {
   refreshToken: number;
@@ -77,7 +78,7 @@ export function IncidentsSummaryPanel({ refreshToken }: IncidentsSummaryPanelPro
             <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Por estado</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               {Object.entries(summary.by_status).map(([key, value]) => (
-                <SummaryCard key={key} title={key} value={value} />
+                <SummaryCard key={key} title={getIncidentDisplayLabel(key)} value={value} />
               ))}
             </div>
           </div>
@@ -86,7 +87,7 @@ export function IncidentsSummaryPanel({ refreshToken }: IncidentsSummaryPanelPro
             <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Por categoría</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {Object.entries(summary.by_category).map(([key, value]) => (
-                <SummaryCard key={key} title={key} value={value} />
+                <SummaryCard key={key} title={getIncidentDisplayLabel(key)} value={value} />
               ))}
             </div>
           </div>
@@ -95,7 +96,7 @@ export function IncidentsSummaryPanel({ refreshToken }: IncidentsSummaryPanelPro
             <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Por origen</h3>
             <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {Object.entries(summary.by_origin).map(([key, value]) => (
-                <SummaryCard key={key} title={key} value={value} />
+                <SummaryCard key={key} title={getIncidentDisplayLabel(key)} value={value} />
               ))}
             </div>
           </div>

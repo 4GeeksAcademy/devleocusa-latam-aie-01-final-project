@@ -13,15 +13,10 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { href: "/", label: "Inicio" },
-  { href: "/account/profile", label: "Mi perfil" },
-  { href: "/account/change-password", label: "Cambiar contraseña" },
+  { href: "/account/user", label: "Mi usuario" },
   { href: "/candidaturas", label: "Candidaturas" },
   { href: "/leads", label: "Leads" },
   { href: "/operaciones/inventario", label: "Inventario operativo" },
-  { href: "/backoffice/inventory/products", label: "Productos / SKU" },
-  { href: "/backoffice/inventory/orders", label: "Historial de órdenes", nested: true },
-  { href: "/backoffice/inventory/orders/inbound", label: "Registrar entrada", nested: true },
-  { href: "/backoffice/inventory/orders/outbound", label: "Registrar salida", nested: true },
   { href: "/operaciones/proveedores", label: "Directorio de proveedores" },
   { href: "/operaciones/incidencias", label: "Gestión de incidencias" },
   { href: "/knowledge", label: "Base de conocimiento" },

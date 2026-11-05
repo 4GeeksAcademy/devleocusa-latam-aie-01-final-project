@@ -186,27 +186,33 @@ def generate_department_section(department: str, workstream: dict[str, Any], sum
     return generator.generate(workstream, summary, feedback)
 
 
-_HITO9_TO_LEGACY = {
+_CANONICAL_TO_LEGACY = {
     "warehouse": "operaciones_almacen",
     "lastmile": "ultima_milla_transportistas",
     "reverse": "logistica_inversa",
 }
+_LEGACY_TO_CANONICAL = {legacy: canonical for canonical, legacy in _CANONICAL_TO_LEGACY.items()}
 
 
-def generate_hito9_section(department: str, workstream: dict[str, Any], summary: str = "", feedback: str = "") -> str:
-    """Generate one canonical Hito 9 department using the compatible legacy agents."""
-    legacy_id = _HITO9_TO_LEGACY.get(department)
+def generate_canonical_section(department: str, workstream: dict[str, Any], summary: str = "", feedback: str = "") -> str:
+    """Generate a section using the compatible agents, accepting both the
+    canonical department IDs (warehouse, lastmile, reverse) used by the
+    proposal flow and the legacy intake identifiers retained in older tickets
+    (operaciones_almacen, ultima_milla_transportistas, logistica_inversa)."""
+    canonical_id = _LEGACY_TO_CANONICAL.get(department, department)
+    legacy_id = _CANONICAL_TO_LEGACY.get(canonical_id)
     if legacy_id is None:
-        raise ValueError(f"Departamento Hito 9 no soportado: {department}")
+        raise ValueError(f"Departamento no soportado: {department}")
     return generate_department_section(legacy_id, {**workstream, "department": legacy_id}, summary, feedback)
 
 
-def evaluate_hito9_section(department: str, draft: str, aspects: dict[str, Any]) -> dict[str, Any]:
-    legacy_id = _HITO9_TO_LEGACY.get(department)
+def evaluate_canonical_section(department: str, draft: str, aspects: dict[str, Any]) -> dict[str, Any]:
+    canonical_id = _LEGACY_TO_CANONICAL.get(department, department)
+    legacy_id = _CANONICAL_TO_LEGACY.get(canonical_id)
     if legacy_id is None:
-        raise ValueError(f"Departamento Hito 9 no soportado: {department}")
+        raise ValueError(f"Departamento no soportado: {department}")
     result = evaluate_section(legacy_id, draft, aspects)
-    result["department_id"] = department
+    result["department_id"] = canonical_id
     return result
 
 

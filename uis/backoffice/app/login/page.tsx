@@ -110,7 +110,7 @@ export default function LoginPage() {
                 href="/forgot-password"
                 className="text-xs font-medium text-sky-700 hover:text-sky-800 hover:underline"
               >
-                Olvide mi contraseña
+                Olvidé mi contraseña
               </Link>
             </div>
           </div>
@@ -133,7 +133,7 @@ export default function LoginPage() {
         <p className="mt-4 text-center text-sm text-slate-600">
           No tienes cuenta?{' '}
           <Link href="/register" className="font-medium text-sky-700 hover:text-sky-800 hover:underline">
-            Registrate
+            Regístrate
           </Link>
         </p>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Spinner } from "../ui/Spinner";
 import { Alert } from "../ui/Alert";
 import {
@@ -24,6 +24,54 @@ import {
 } from "../../../lib/instrumentation";
 
 // ─── Helpers ────────────────────────────────────────────────────────────
+
+type StockLevel = "critical" | "low" | "healthy";
+
+function computeStockLevel(value: number): StockLevel {
+  if (value < 10) return "critical";
+  if (value < 50) return "low";
+  return "healthy";
+}
+
+const stockLevelConfig: Record<
+  StockLevel,
+  { label: string; dot: string; bg: string; border: string }
+> = {
+  critical: {
+    label: "Crítico",
+    dot: "bg-rose-400",
+    bg: "bg-rose-50",
+    border: "border-rose-200",
+  },
+  low: {
+    label: "Bajo",
+    dot: "bg-amber-400",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+  },
+  healthy: {
+    label: "Saludable",
+    dot: "bg-emerald-500",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+  },
+};
+
+function StockBadge({ value }: { value: number }) {
+  const level = computeStockLevel(value);
+  const config = stockLevelConfig[level];
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${config.bg} ${config.border}`}
+    >
+      <span className={`inline-block h-2 w-2 rounded-full ${config.dot}`} />
+      <span>{value}</span>
+      <span className="text-slate-500">·</span>
+      <span>{config.label}</span>
+    </span>
+  );
+}
 
 const WAREHOUSE_OPTIONS: { value: WarehouseLocation; label: string }[] = [
   { value: "Los Angeles", label: "Los Ángeles" },
@@ -57,6 +105,33 @@ export function InventoryDashboard() {
   const [orders, setOrders] = useState<OrderHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Filtro por nombre o código SKU
+  const filtered = useMemo(
+    () =>
+      products.filter((p) => {
+        if (!searchTerm.trim()) return true;
+        const term = searchTerm.toLowerCase();
+        return (
+          p.name.toLowerCase().includes(term) ||
+          p.sku_code.toLowerCase().includes(term)
+        );
+      }),
+    [products, searchTerm],
+  );
+
+  // Métricas de resumen
+  const summary = useMemo(() => {
+    let crit = 0;
+    let low = 0;
+    for (const p of products) {
+      const level = computeStockLevel(p.current_stock);
+      if (level === "critical") crit++;
+      else if (level === "low") low++;
+    }
+    return { total: products.length, critical: crit, low };
+  }, [products]);
 
   // Create product form
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -405,16 +480,73 @@ export function InventoryDashboard() {
         </section>
       )}
 
-      {/* Products table */}
+      {/* Summary cards + search + Products table */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        {/* Summary cards */}
+        <div className="mb-6 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Total SKUs
+            </p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">
+              {summary.total}
+            </p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Stock bajo / crítico
+            </p>
+            <p className="mt-1 text-2xl font-bold text-amber-900">
+              {summary.critical + summary.low}
+            </p>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+              Stock saludable
+            </p>
+            <p className="mt-1 text-2xl font-bold text-emerald-900">
+              {summary.total - summary.critical - summary.low}
+            </p>
+          </div>
+        </div>
+
+        {/* Search input */}
+        <div className="relative mb-4">
+          <svg
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"
+            />
+          </svg>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por nombre o código SKU…"
+            className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-4 text-sm shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+          />
+        </div>
+
         <h2 className="mb-4 text-lg font-semibold text-slate-900">
-          Productos ({products.length})
+          Productos ({filtered.length} de {products.length})
         </h2>
 
         {products.length === 0 ? (
           <p className="text-sm text-slate-500">
             No hay productos registrados. Crea el primero usando el botón
             superior.
+          </p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No se encontraron productos que coincidan con{" "}
+            <span className="font-semibold">“{searchTerm}”</span>.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -430,7 +562,7 @@ export function InventoryDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
+                {filtered.map((product) => (
                   <tr
                     key={product.id}
                     className="border-b border-slate-100 last:border-0"
@@ -445,15 +577,7 @@ export function InventoryDashboard() {
                       {product.warehouse}
                     </td>
                     <td className="py-3 pr-4 text-right">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          product.current_stock > 0
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-rose-100 text-rose-800"
-                        }`}
-                      >
-                        {product.current_stock}
-                      </span>
+                      <StockBadge value={product.current_stock} />
                     </td>
                     <td className="py-3 pr-4 text-right">
                       <div className="flex items-center justify-end gap-2">

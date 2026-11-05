@@ -1,9 +1,9 @@
-"""Department-isolated human approval workflow for TrackFlow proposal sections.
+﻿"""Department-isolated human approval workflow for TrackFlow proposal sections.
 
 Each active department runs with its own LangGraph thread. An interrupt therefore
 persists and pauses only that department; peers can continue and be resumed
 independently. Business conflict arbitration is deterministic and follows the
-TrackFlow Hito 9 briefing.
+TrackFlow briefing.
 """
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ from langgraph.types import Command, interrupt
 APPROVERS = {
     "warehouse": "Ana Whitfield",
     "lastmile": "Carlos Vega",
-    "reverse": "Sofía Ramos",
+    "reverse": "SofÃ­a Ramos",
 }
 VALID_DECISIONS = {"approve", "reject", "request_changes"}
 DEFAULT_MAX_ITERATIONS = 3
-COUNTRY_CURRENCY = {"us": "USD", "usa": "USD", "united states": "USD", "spain": "EUR", "españa": "EUR", "espana": "EUR"}
+COUNTRY_CURRENCY = {"us": "USD", "usa": "USD", "united states": "USD", "spain": "EUR", "espaÃ±a": "EUR", "espana": "EUR"}
 
 
 class ApprovalState(TypedDict, total=False):
@@ -67,11 +67,11 @@ def _trace(state: ApprovalState, node: str, agent: str, input_data: Any, output_
 def validate_decision(value: Any) -> dict[str, str]:
     """Validate the untrusted resume payload before it can affect graph state."""
     if not isinstance(value, dict):
-        raise ValueError("La decisión debe ser un objeto.")
+        raise ValueError("La decisiÃ³n debe ser un objeto.")
     decision = value.get("decision")
     comment = value.get("comment", "")
     if decision not in VALID_DECISIONS:
-        raise ValueError("Decisión inválida: use approve, reject o request_changes.")
+        raise ValueError("DecisiÃ³n invÃ¡lida: use approve, reject o request_changes.")
     if not isinstance(comment, str) or len(comment) > 4000:
         raise ValueError("El comentario debe ser texto de hasta 4000 caracteres.")
     if decision in {"reject", "request_changes"} and not comment.strip():
@@ -113,8 +113,8 @@ def arbitrate_conflicts(
         if department in {"reverse", "warehouse", "lastmile"} and isinstance(turnaround, (int, float)) and turnaround < 48:
             conflicts.append({
                 "trigger_id": "returns-sla-breach",
-                "arbitrator": "Sofía Ramos" if department == "reverse" else "Miguel Torres",
-                "resolution": "Forzar request_changes en toda sección que prometa devoluciones en menos de 48 horas.",
+                "arbitrator": "SofÃ­a Ramos" if department == "reverse" else "Miguel Torres",
+                "resolution": "Forzar request_changes en toda secciÃ³n que prometa devoluciones en menos de 48 horas.",
                 "affected_departments": [department], "maximum_iterations": max_iterations,
             })
 
@@ -125,7 +125,7 @@ def arbitrate_conflicts(
     if offenders:
         conflicts.append({
             "trigger_id": "currency-mismatch", "arbitrator": "Miguel Torres",
-            "resolution": f"Reescribir las secciones ofensoras a {expected_currency or 'la moneda del país'}; no cerrar si persiste tras el límite.",
+            "resolution": f"Reescribir las secciones ofensoras a {expected_currency or 'la moneda del paÃ­s'}; no cerrar si persiste tras el lÃ­mite.",
             "affected_departments": sorted(offenders), "maximum_iterations": max_iterations,
         })
     return {"conflicts": conflicts, "blocked": bool(conflicts)}
@@ -150,7 +150,7 @@ def build_department_approval_graph(
         approval = state.get("approval")
         if approval and approval["decision"] in {"reject", "request_changes"}:
             if count >= min(max_iterations, int(state.get("max_iterations", max_iterations))):
-                result = {"approval_status": "needs_human_review", "error": "Se alcanzó el máximo de iteraciones.", "iteration_count": count}
+                result = {"approval_status": "needs_human_review", "error": "Se alcanzÃ³ el mÃ¡ximo de iteraciones.", "iteration_count": count}
                 traced = _trace(state, "iteration_limit", "approval_guard", approval, result)
                 if on_trace is not None:
                     on_trace(traced[-1])
