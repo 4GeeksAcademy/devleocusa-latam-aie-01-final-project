@@ -81,7 +81,7 @@ const cards: DashboardCard[] = [
   },
   {
     href: "/leads",
-    label: "Leads",
+    label: "Prospectos",
     description: "Consulta y administra prospectos comerciales.",
     icon: <IconLeads />,
     color: "text-cyan-600 bg-cyan-50",

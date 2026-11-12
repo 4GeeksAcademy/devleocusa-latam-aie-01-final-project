@@ -67,7 +67,7 @@ export default function LoginPage() {
         <div className="mb-6 space-y-2">
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Iniciar sesión</h2>
           <p className="text-sm text-slate-600">
-            Accede al Backoffice de TrackFlow para gestionar candidaturas y operaciones.
+            Accede al Backoffice de TrackFlow.
           </p>
         </div>
 

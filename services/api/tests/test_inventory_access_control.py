@@ -30,6 +30,10 @@ def test_inventory_reads_require_authentication():
     assert client.get("/inventory/products").status_code == 401
     assert client.get("/inventory/products/example").status_code == 401
     assert client.get("/inventory/orders").status_code == 401
+    assert client.post(
+        "/inventory/orders/outbound",
+        json={"sku_id": "example", "quantity": 1},
+    ).status_code == 401
 
 
 def test_inventory_write_rejects_regular_user(test_user):
@@ -43,7 +47,7 @@ def test_inventory_write_rejects_regular_user(test_user):
     assert response.status_code == 403
 
 
-def test_outbound_dispatch_requires_distinct_human_approval():
+def test_regular_user_records_outbound_dispatch_immediately():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -57,9 +61,7 @@ def test_outbound_dispatch_requires_distinct_human_approval():
         session.add(SKUEntry(sku_id="sku-1", quantity=5, user_uuid="seed"))
         session.commit()
 
-    requester = User(id="requester", email="requester@example.com", hashed_password="x", role=UserRole.MANAGER)
-    approver = User(id="approver", email="approver@example.com", hashed_password="x", role=UserRole.ADMIN)
-    active_user = {"value": requester}
+    regular_user = User(id="regular-user", email="user@example.com", hashed_password="x", role=UserRole.USER)
     app = FastAPI()
     app.include_router(inventory_router)
 
@@ -68,32 +70,26 @@ def test_outbound_dispatch_requires_distinct_human_approval():
             yield session
 
     app.dependency_overrides[get_sql_session] = session_dependency
-    app.dependency_overrides[get_current_user] = lambda: active_user["value"]
+    app.dependency_overrides[get_current_user] = lambda: regular_user
     client = TestClient(app)
 
     response = client.post("/inventory/orders/outbound", json={"sku_id": "sku-1", "quantity": 3})
-    assert response.status_code == 202
-    request_id = response.json()["request_id"]
-    with Session(engine) as session:
-        assert session.get(PendingSKUExit, request_id).status == "pending"
-        assert session.get(SKUEntry, 1) is None  # no stock entry is altered/deleted
-        assert len(session.exec(select(SKUExit)).all()) == 0
+    assert response.status_code == 201
+    exit_id = response.json()["id"]
+    assert response.json()["quantity"] == 3
 
-    self_approval = client.post(
-        f"/inventory/orders/outbound/{request_id}/decision",
-        json={"decision": "approve"},
+    excessive_exit = client.post(
+        "/inventory/orders/outbound", json={"sku_id": "sku-1", "quantity": 3}
     )
-    assert self_approval.status_code == 403
-
-    active_user["value"] = approver
-    decision = client.post(
-        f"/inventory/orders/outbound/{request_id}/decision",
-        json={"decision": "approve", "comment": "Verified order"},
-    )
-    assert decision.status_code == 200
-    assert decision.json()["status"] == "approved"
+    assert excessive_exit.status_code == 400
+    products = client.get("/inventory/products")
+    assert products.status_code == 200
+    assert products.json()[0]["current_stock"] == 2
+    assert products.json()[0]["available_stock"] == 2
     with Session(engine) as session:
+        stored_exit = session.get(SKUExit, exit_id)
+        assert stored_exit is not None
+        assert stored_exit.user_uuid == "regular-user"
+        assert stored_exit.quantity == 3
+        assert session.get(SKUEntry, 1) is None  # entries remain immutable
         assert len(session.exec(select(SKUExit)).all()) == 1
-        stored_request = session.get(PendingSKUExit, request_id)
-        assert stored_request.approver_uuid == "approver"
-        assert stored_request.decision_comment == "Verified order"

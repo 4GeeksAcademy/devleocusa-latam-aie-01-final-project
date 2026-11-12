@@ -34,6 +34,7 @@ export interface SKURead {
   sku_code: string;
   warehouse: string;
   current_stock: number;
+  available_stock: number;
 }
 
 export interface SKUCreatePayload {
@@ -65,7 +66,6 @@ export interface SKUExitRead {
   sku_id: string;
   quantity: number;
   created_at: string;
-  user_uuid: string;
 }
 
 export interface OrderHistoryItem {
@@ -279,3 +279,5 @@ export async function createOutboundOrder(
 export async function listOrders(): Promise<OrderHistoryItem[]> {
   return inventoryFetch<OrderHistoryItem[]>("/orders");
 }
+
+

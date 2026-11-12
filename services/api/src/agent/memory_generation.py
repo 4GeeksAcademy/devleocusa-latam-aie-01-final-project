@@ -6,6 +6,7 @@ import re
 from collections.abc import Callable
 from contextvars import ContextVar
 from datetime import datetime
+from functools import lru_cache
 from zoneinfo import ZoneInfo
 from typing import Any
 
@@ -24,6 +25,21 @@ stream_control_context: ContextVar[dict[str, Any] | None] = ContextVar(
 stream_context_explicit: ContextVar[bool] = ContextVar("agent_stream_context_explicit", default=False)
 
 
+@lru_cache(maxsize=8)
+def _cached_generation_client(client_class, api_key, base_url, timeout):
+    """Reuse the HTTP connection pool across turns with the same configuration."""
+    return client_class(api_key=api_key, base_url=base_url, timeout=timeout)
+
+
+def _get_generation_client(timeout: float):
+    return _cached_generation_client(
+        OpenAI,
+        os.getenv("GENERATION_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        os.getenv("GENERATION_BASE_URL", "https://api.openai.com/v1"),
+        timeout,
+    )
+
+
 def generate_casual_answer(question: str) -> str | None:
     """Answer brief general questions without retrieval, tools, or memory writes."""
     normalized = question.casefold()
@@ -35,11 +51,7 @@ def generate_casual_answer(question: str) -> str | None:
     if re.search(r"\b(?:hola|buenos dias|buenas tardes|buenas noches)\b", normalized):
         return "¡Hola! Espero que estés teniendo un buen día."
 
-    client = OpenAI(
-        api_key=os.getenv("GENERATION_API_KEY") or os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("GENERATION_BASE_URL", "https://api.openai.com/v1"),
-        timeout=15.0,
-    )
+    client = _get_generation_client(timeout=15.0)
     response = client.chat.completions.create(
         model=os.getenv("GENERATION_MODEL_ID", "gpt-4o-mini"),
         messages=[
@@ -81,11 +93,7 @@ def generate_answer_and_proposal(
     )
     stream_cancel = stream_cancel_context.get() if explicit_stream else None
     stream_control = stream_control_context.get() if explicit_stream else None
-    client = OpenAI(
-        api_key=os.getenv("GENERATION_API_KEY") or os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("GENERATION_BASE_URL", "https://api.openai.com/v1"),
-        timeout=30.0,
-    )
+    client = _get_generation_client(timeout=30.0)
     context = json.dumps(
         [
             {
@@ -105,7 +113,7 @@ def generate_answer_and_proposal(
         model=os.getenv("GENERATION_MODEL_ID", "gpt-4o-mini"),
         response_format={"type": "json_object"},
         temperature=0.3,
-        max_tokens=1200,
+        max_tokens=800,
         stream=stream_callback is not None,
         messages=[
             {
@@ -118,7 +126,8 @@ def generate_answer_and_proposal(
                     "TrackFlow. Atiende almacenes, última milla, carriers, incidencias, inventario, "
                     "devoluciones y políticas empresariales. Para small talk, responde brevemente y "
                     "reconduce siempre a TrackFlow. Devuelve JSON con answer y proposal. "
-                    "answer es la respuesta en español. proposal debe ser null o un objeto con "
+                    "answer es la respuesta en español, clara y concisa (normalmente 1–4 frases; usa "
+                    "listas solo si aclaran pasos). proposal debe ser null o un objeto con "
                     "category (carrier_rule/recurring_incident/b2b_report_preference), memory_key, "
                     "content, reason, country (string/null) y repetition_count (integer/null). "
                     "Solo propone: (1) corrección de cobertura/regla de carrier, consolidada por carrier + país "

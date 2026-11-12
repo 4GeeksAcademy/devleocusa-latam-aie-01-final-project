@@ -292,28 +292,24 @@ export function InventoryDashboard() {
     }
 
     setActionLoading((prev) => ({ ...prev, [`outbound-${skuId}`]: true }));
-    const startTs = nowMs();
     try {
+      const startTs = nowMs();
       await createOutboundOrder({ sku_id: skuId, quantity: qty });
       const latencyMs = Math.round(nowMs() - startTs);
-
-      notify("success", `Salida registrada: -${qty} unidades.`);
-      setOutboundQty((prev) => ({ ...prev, [skuId]: "" }));
-
-      // Find the product to get sku_code and stock_after
       const product = products.find((p) => p.id === skuId);
+      notify("success", `Salida registrada: −${qty} unidades.`);
       if (product) {
-        const stockAfter = product.current_stock - qty;
         trackOutboundOrderCreated(
           skuId,
           product.sku_code,
           product.warehouse as 'Los Angeles' | 'Zaragoza',
           qty,
-          stockAfter >= 0 ? stockAfter : 0,
+          product.current_stock - qty,
           product.current_stock,
           latencyMs,
         );
       }
+      setOutboundQty((prev) => ({ ...prev, [skuId]: "" }));
 
       await loadData();
     } catch (err) {
@@ -556,7 +552,7 @@ export function InventoryDashboard() {
                   <th className="py-3 pr-4">Código SKU</th>
                   <th className="py-3 pr-4">Nombre</th>
                   <th className="py-3 pr-4">Almacén</th>
-                  <th className="py-3 pr-4 text-right">Stock actual</th>
+                  <th className="py-3 pr-4 text-right">Stock / disponible</th>
                   <th className="py-3 pr-4 text-right">Entrada</th>
                   <th className="py-3 text-right">Salida</th>
                 </tr>
@@ -577,13 +573,17 @@ export function InventoryDashboard() {
                       {product.warehouse}
                     </td>
                     <td className="py-3 pr-4 text-right">
-                      <StockBadge value={product.current_stock} />
+                      <div className="space-y-1">
+                        <StockBadge value={product.current_stock} />
+                        <div className="text-xs text-slate-500">Disponible: {product.available_stock ?? product.current_stock}</div>
+                      </div>
                     </td>
                     <td className="py-3 pr-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <input
                           type="number"
                           min={1}
+                          max={product.available_stock ?? product.current_stock}
                           placeholder="Cant."
                           value={inboundQty[product.id] ?? ""}
                           onChange={(e) =>
@@ -626,7 +626,8 @@ export function InventoryDashboard() {
                         <button
                           type="button"
                           disabled={
-                            actionLoading[`outbound-${product.id}`] ?? false
+                            (actionLoading[`outbound-${product.id}`] ?? false) ||
+                            (product.available_stock ?? product.current_stock) <= 0
                           }
                           onClick={() => handleOutbound(product.id)}
                           className="rounded bg-rose-600 px-2 py-1 text-xs font-semibold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"

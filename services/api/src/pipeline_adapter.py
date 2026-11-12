@@ -99,6 +99,11 @@ def arbitrate_conflicts(sections: list[dict[str, Any]], **kwargs: Any) -> dict[s
     return _approval_module().arbitrate_conflicts(sections, **kwargs)
 
 
+def validate_department_decision(decision: dict[str, Any]) -> dict[str, Any]:
+    """Validate an approval payload using the pipeline package's canonical rules."""
+    return _approval_module().validate_decision(decision)
+
+
 def build_async_department_approval_graph(**kwargs: Any) -> Any:
     """Deprecated: RFP approval currently uses the isolated sync PostgresSaver."""
     raise RuntimeError("Use department_approval_runtime() for the RFP approval graph.")

@@ -68,6 +68,7 @@ def test_llm_classifier_parses_a_typed_tool_decision(monkeypatch) -> None:
     assert captured["base_url"] == "https://api.openai.com/v1"
     assert captured["model"] == "router-test-model"
     assert captured["response_format"] == {"type": "json_object"}
+    assert captured["max_tokens"] == 160
 
 
 def test_llm_classifier_requires_explicit_scope(monkeypatch) -> None:

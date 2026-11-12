@@ -18,8 +18,8 @@ services:
   # ── Backend API (FastAPI + Flask) ─────────────────────────────────────
   api:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
     container_name: trackflow-api
     command: uvicorn src.fastapi_server:app --host 0.0.0.0 --port 8000
     ports:
@@ -159,8 +159,8 @@ services:
   # ── Celery Worker (async task processor) ─────────────────────────────
   celery-worker:
     build:
-      context: ./services
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/Dockerfile
     container_name: trackflow-worker
     command: celery -A src.celery_app worker -l info --concurrency=2
     env_file:
