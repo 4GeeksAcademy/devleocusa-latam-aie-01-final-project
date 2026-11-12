@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { apiFetch } from "@/services/authApi";
 
 type NavItem = {
   href: string;
@@ -12,6 +14,7 @@ const navItems: NavItem[] = [
   { href: "/", label: "Inicio" },
   { href: "/account/profile", label: "Mi perfil" },
   { href: "/account/change-password", label: "Cambiar contraseña" },
+  { href: "/admin/access", label: "Roles y departamentos" },
   { href: "/candidaturas", label: "Candidaturas" },
   { href: "/leads", label: "Leads" },
   { href: "/operaciones", label: "Operaciones" },
@@ -30,11 +33,26 @@ const navItems: NavItem[] = [
 
 export function SidebarNav() {
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void apiFetch("/auth/me")
+      .then(async (response) => {
+        if (!response.ok) return;
+        const me = (await response.json()) as { role?: string };
+        if (active) setIsAdmin(me.role === "admin");
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const visibleItems = navItems.filter((item) => item.href !== "/admin/access" || isAdmin);
 
   return (
     <nav aria-label="Navegación del dashboard">
       <ul className="space-y-2 text-sm">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = pathname === item.href;
 
           return (

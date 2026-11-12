@@ -22,6 +22,7 @@ from src.agent.invocation import invoke_agent
 from src.agent.graph import build_agent_graph
 from src.services.auth_service import get_user_from_token
 from src.models.user import UserRole
+from src.models.user import Department
 from src.services.chat_pubsub import chat_pubsub
 from src.services import chat_session_store as store
 
@@ -261,7 +262,9 @@ async def chat_websocket(websocket: WebSocket, session_id: str) -> None:
         return
     try:
         user = get_user_from_token(token)
-        if user.role not in {UserRole.ADMIN, UserRole.MANAGER}:
+        if user.role not in {UserRole.ADMIN, UserRole.MANAGER} or (
+            user.role != UserRole.ADMIN and user.department != Department.CUSTOMER_EXPERIENCE
+        ):
             await websocket.close(code=1008, reason="Chat reservado a personal autorizado")
             return
         session = store.create_or_get_session(session_id, str(user.id))

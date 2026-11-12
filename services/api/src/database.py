@@ -38,6 +38,9 @@ stock_movements_table = db.table("stock_movements")
 stock_reservations_table = db.table("stock_reservations")
 carriers_table = db.table("carriers")
 carrier_assignments_table = db.table("carrier_assignments")
+departments_table = db.table("departments")
+people_records_table = db.table("people_records")
+client_renewals_table = db.table("client_renewals")
 chat_sessions_table = db.table("chat_sessions")
 chat_messages_table = db.table("chat_messages")
 
@@ -95,6 +98,21 @@ def get_carriers_table() -> Table:
 def get_carrier_assignments_table() -> Table:
     """Return the carrier assignments table handle."""
     return carrier_assignments_table
+
+
+def get_departments_table() -> Table:
+    """Return the canonical organizational department registry."""
+    return departments_table
+
+
+def get_people_records_table() -> Table:
+    """Return restricted employee HR records."""
+    return people_records_table
+
+
+def get_client_renewals_table() -> Table:
+    """Return commercial customer renewal records."""
+    return client_renewals_table
 
 
 def get_chat_sessions_table() -> Table:

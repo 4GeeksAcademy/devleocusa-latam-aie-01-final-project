@@ -14,14 +14,18 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import ValidationError
 
 from telemetry.models import TelemetryEvent
+from src.models.user import Department, User, UserRole
+from src.services.access_control import require_access
 
 logger = logging.getLogger("trackflow.telemetry")
 
 router = APIRouter(tags=["telemetry"])
+_technology_employee = require_access(UserRole.USER, Department.TECHNOLOGY)
+_technology_supervisor = require_access(UserRole.MANAGER, Department.TECHNOLOGY)
 
 # Shared in-memory cache imported from the api service layer
 from src.cache import TTLCache  # noqa: E402
@@ -51,7 +55,10 @@ def _get_sql_connection():
 
 
 @router.post("/events", status_code=200)
-def receive_events(body: dict[str, Any]) -> dict[str, int]:
+def receive_events(
+    body: dict[str, Any],
+    _current_user: User = Depends(_technology_supervisor),
+) -> dict[str, int]:
     """Receive, validate, and persist a batch of telemetry events.
 
     Each event is validated individually via
@@ -216,6 +223,7 @@ def get_report(
         description="End of the time window (ISO 8601, UTC). "
         "Defaults to now.",
     ),
+    _current_user: User = Depends(_technology_employee),
 ) -> dict[str, Any]:
     """Return aggregated operational metrics for the given time window.
 

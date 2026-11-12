@@ -9,8 +9,9 @@ from pydantic import BaseModel
 
 from src.cache import me_cache, profile_cache, users_list_cache
 from src.models.profile import Profile, ProfileResponse
-from src.models.user import TinyDBId, User, UserRole
+from src.models.user import Department, TinyDBId, User, UserRole
 from src.services.auth_service import get_current_user
+from src.services.access_control import require_roles
 from src.services.profile_service import get_profile_by_user_id
 from src.services.security import PasswordValidationError
 from src.services.user_service import (
@@ -18,6 +19,8 @@ from src.services.user_service import (
     delete_user,
     get_user_by_id,
     list_users,
+    list_departments,
+    seed_departments,
     update_user,
 )
 
@@ -30,11 +33,13 @@ class UserCreateRequest(BaseModel):
     name: str | None = None
     phone: str | None = None
     address: str | None = None
+    # Role and department remain server-assigned for public registrations.
 
 
 class UserUpdateRequest(BaseModel):
     email: str | None = None
     role: UserRole | None = None
+    department: Department | None = None
     tenant_id: str | None = None
 
 
@@ -43,6 +48,7 @@ class UserResponse(BaseModel):
     email: str
     is_active: bool
     role: UserRole
+    department: Department | None = None
     tenant_id: str | None = None
     created_at: datetime
 
@@ -58,6 +64,7 @@ def _to_user_response(user: User) -> UserResponse:
         email=user.email,
         is_active=user.is_active,
         role=user.role,
+        department=user.department,
         tenant_id=user.tenant_id,
         created_at=user.created_at,
     )
@@ -82,6 +89,22 @@ def _can_update_target_user(current_user: User, target_user_id: str) -> bool:
 def _require_admin(current_user: User) -> None:
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+
+class DepartmentResponse(BaseModel):
+    id: str
+    name: str
+    is_active: bool = True
+
+
+_admin_only = require_roles({UserRole.ADMIN})
+
+
+@users_router.get("/departments", response_model=list[DepartmentResponse])
+def get_departments(_admin: User = Depends(_admin_only)) -> list[DepartmentResponse]:
+    # Seeding is intentionally idempotent and only performed by an admin call.
+    records = seed_departments()
+    return [DepartmentResponse.model_validate(item) for item in records]
 
 
 @users_router.post("", response_model=UserWithProfileResponse, status_code=status.HTTP_201_CREATED)
@@ -112,8 +135,7 @@ def register_user(
 
 
 @users_router.get("", response_model=list[UserResponse])
-def get_users(current_user: User = Depends(get_current_user)) -> list[UserResponse]:
-    _require_admin(current_user)
+def get_users(current_user: User = Depends(_admin_only)) -> list[UserResponse]:
     cached = users_list_cache.get("all")
     if cached is not None:
         return cached  # type: ignore[return-value]
@@ -144,7 +166,7 @@ def put_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
     updates = payload.model_dump(exclude_none=True)
-    if current_user.role != UserRole.ADMIN and ({"role", "tenant_id"} & updates.keys()):
+    if current_user.role != UserRole.ADMIN and ({"role", "department", "tenant_id"} & updates.keys()):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     try:
         user = update_user(user_id, updates)
@@ -165,7 +187,7 @@ def put_user(
 
 
 @users_router.delete("/{user_id}")
-def remove_user(user_id: str, current_user: User = Depends(get_current_user)) -> dict[str, str]:
+def remove_user(user_id: str, current_user: User = Depends(_admin_only)) -> dict[str, str]:
     _require_admin(current_user)
     deleted = delete_user(user_id)
     if not deleted:

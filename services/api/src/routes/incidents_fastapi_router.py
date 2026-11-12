@@ -18,9 +18,9 @@ from src.models.incident import (
     IncidentStatusResponse,
 )
 from src.models.user import User
+from src.models.user import Department, UserRole
 from src.services.access_control import (
-    require_internal_operator,
-    require_service_or_operator,
+    require_access,
 )
 from src.services.incidents_analysis_service import analyze_incidents_csv
 from src.services.incidents_service import (
@@ -33,6 +33,8 @@ from src.services.incidents_service import (
 )
 
 incidents_fastapi_router = APIRouter(tags=["incidents-legacy"])
+_carrier_employee = require_access(UserRole.USER, Department.LAST_MILE_CARRIERS)
+_carrier_supervisor = require_access(UserRole.MANAGER, Department.LAST_MILE_CARRIERS)
 
 # ── In-memory TTL cache for aggregated summaries ────────────────────────
 # Data changes infrequently but is read constantly (dashboard / KPIs).
@@ -120,7 +122,7 @@ def _raise_bad_request_with_details(details: list[dict[str, str]]) -> None:
 @incidents_fastapi_router.post("/api/incidents", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
 def create_incident_route(
     payload: dict,
-    current_user: User = Depends(require_internal_operator),
+    current_user: User = Depends(_carrier_employee),
 ) -> IncidentResponse:
     try:
         request_body = IncidentCreateRequest.model_validate(payload)
@@ -142,7 +144,7 @@ def list_incidents_route(
     origin: IncidentOrigin | None = None,
     branch: IncidentBranch | None = None,
     category: IncidentCategory | None = None,
-    current_user: User = Depends(require_service_or_operator),
+    current_user: User = Depends(_carrier_employee),
 ) -> list[IncidentListResponse]:
     tenant_id = _require_tenant(current_user)
     incidents = list_incidents(tenant_id=tenant_id, status=status, origin=origin, branch=branch, category=category)
@@ -151,7 +153,7 @@ def list_incidents_route(
 
 @incidents_fastapi_router.get("/api/incidents/summary")
 def incidents_summary_route(
-    current_user: User = Depends(require_service_or_operator),
+    current_user: User = Depends(_carrier_employee),
 ) -> dict[str, object]:
     tenant_id = _require_tenant(current_user)
     # Try cache first — avoids expensive full-table scan
@@ -168,7 +170,7 @@ def incidents_summary_route(
 @incidents_fastapi_router.get("/api/incidents/{incident_id}", response_model=IncidentResponse)
 def get_incident_by_id_route(
     incident_id: str,
-    current_user: User = Depends(require_service_or_operator),
+    current_user: User = Depends(_carrier_employee),
 ) -> IncidentResponse:
     tenant_id = _require_tenant(current_user)
     incident = get_incident_by_id(incident_id, tenant_id=tenant_id)
@@ -182,7 +184,7 @@ def get_incident_by_id_route(
 def patch_incident_status_route(
     incident_id: str,
     payload: dict,
-    current_user: User = Depends(require_service_or_operator),
+    current_user: User = Depends(_carrier_supervisor),
 ) -> IncidentStatusResponse:
     tenant_id = _require_tenant(current_user)
     incident = get_incident_by_id(incident_id, tenant_id=tenant_id)
@@ -224,7 +226,7 @@ def patch_incident_status_route(
 @incidents_fastapi_router.post("/api/incidents/analyze")
 async def analyze_incidents_route(
     file: UploadFile = File(...),
-    _current_user: User = Depends(require_internal_operator),
+    _current_user: User = Depends(_carrier_supervisor),
 ) -> dict:
     if not _is_csv_upload(file):
         raise HTTPException(

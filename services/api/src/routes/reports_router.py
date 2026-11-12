@@ -18,15 +18,19 @@ from typing import Any
 from uuid import uuid4
 
 from celery.result import AsyncResult
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from src.celery_app import app as celery_app
+from src.models.user import Department, User, UserRole
+from src.services.access_control import require_access
 from src.tasks import generate_report
 
 # ── Router ──────────────────────────────────────────────────────────────
 
 router = APIRouter(tags=["reports"])
+_executive_employee = require_access(UserRole.USER, Department.EXECUTIVE)
+_executive_supervisor = require_access(UserRole.MANAGER, Department.EXECUTIVE)
 
 
 # ── Pydantic schemas (strict typing) ───────────────────────────────────
@@ -146,7 +150,10 @@ def _normalise_state(raw: str) -> TaskState:
         "vía ``GET /tasks/{task_id}``."
     ),
 )
-async def dispatch_report_generation(body: ReportGenerateRequest):
+async def dispatch_report_generation(
+    body: ReportGenerateRequest,
+    _current_user: User = Depends(_executive_supervisor),
+):
     """Dispatch report generation to Celery and return 202 Accepted."""
     report_id = body.report_id or str(uuid4())
     client_id = body.client_id
@@ -183,7 +190,10 @@ async def dispatch_report_generation(body: ReportGenerateRequest):
         "actual de una tarea Celery.  Usar para polling desde el frontend."
     ),
 )
-async def get_task_status(task_id: str):
+async def get_task_status(
+    task_id: str,
+    _current_user: User = Depends(_executive_employee),
+):
     """Return the current state of a Celery task by its ID."""
     async_result = AsyncResult(task_id, app=celery_app)
 
