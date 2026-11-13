@@ -1,3 +1,5 @@
+import type { ReactElement } from 'react';
+
 "use client";
 
 import Link from "next/link";
@@ -66,7 +68,7 @@ interface DashboardCard {
   href: string;
   label: string;
   description: string;
-  icon: JSX.Element;
+  icon: ReactElement;
   color: string;
   managerOnly?: boolean;
 }

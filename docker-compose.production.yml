@@ -14,6 +14,11 @@ services:
       REDIS_URL: ${REDIS_URL:?Set production Redis URL}
       SQL_URL_FILE: /run/secrets/database_url
       MCP_OAUTH_CLIENT_SECRET: ${MCP_OAUTH_CLIENT_SECRET:?Inject MCP OAuth client secret from secret store}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:?Set Microsoft application client ID}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:?Inject Microsoft client secret from secret store}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:?Set organizations or approved tenant ID}
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:?Set exact public HTTPS Microsoft callback URI}
+      FEDERATED_AUTH_FRONTEND_URL: ${FEDERATED_AUTH_FRONTEND_URL:?Set public HTTPS frontend URL}
     secrets:
       - api_secret
       - database_url

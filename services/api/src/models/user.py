@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -46,7 +47,8 @@ class User(BaseModel):
 
     id: TinyDBId
     email: str = Field(min_length=3)
-    hashed_password: str = Field(min_length=1)
+    # Empty only for explicitly provisioned federated-only accounts.
+    hashed_password: str = Field(default="", min_length=0)
     is_active: bool = True
     role: UserRole
     # Missing department is unassigned and fails closed for scoped resources.
@@ -54,4 +56,6 @@ class User(BaseModel):
     # Provisioned by an administrator; never accepted by public registration.
     # None is intentionally treated as unassigned and fails closed on tenant APIs.
     tenant_id: str | None = None
+    # Explicitly assigned by TrackFlow onboarding/admin, never inferred from IdP claims.
+    audience: Literal["internal", "b2b_client"] = "internal"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

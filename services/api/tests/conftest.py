@@ -64,6 +64,10 @@ def fresh_db():
         get_stock_reservations_table,
         get_carriers_table,
         get_carrier_assignments_table,
+        get_federated_identities_table,
+        get_federated_audit_table,
+        get_oauth_transactions_table,
+        get_federated_login_codes_table,
     )
 
     # Wipe all tables to guarantee clean state
@@ -75,6 +79,10 @@ def fresh_db():
     get_stock_reservations_table().truncate()
     get_carriers_table().truncate()
     get_carrier_assignments_table().truncate()
+    get_federated_identities_table().truncate()
+    get_federated_audit_table().truncate()
+    get_oauth_transactions_table().truncate()
+    get_federated_login_codes_table().truncate()
 
     return db
 

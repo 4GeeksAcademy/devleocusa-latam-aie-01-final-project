@@ -34,6 +34,7 @@ class TokenResponse(BaseModel):
 class MeResponse(BaseModel):
     email: str
     role: str
+    has_password: bool
     department: Department | None
     profile: ProfileResponse | None
 
@@ -94,6 +95,7 @@ def get_me(current_user: User = Depends(get_current_user)) -> MeResponse:
     response = MeResponse(
         email=current_user.email,
         role=current_user.role.value,
+        has_password=bool(current_user.hashed_password),
         department=current_user.department,
         profile=_to_profile_response(profile),
     )
@@ -127,10 +129,12 @@ def change_password(
     payload: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
-    if not verify_password(payload.current_password, current_user.hashed_password):
+    if current_user.hashed_password and not verify_password(
+        payload.current_password, current_user.hashed_password
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Current password is incorrect.",
+            detail="Current password is incorrect." if current_user.hashed_password else "Set a new password to enable password sign-in.",
         )
 
     try:
