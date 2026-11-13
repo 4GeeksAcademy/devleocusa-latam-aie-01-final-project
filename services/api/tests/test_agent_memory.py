@@ -111,6 +111,29 @@ def test_generation_combines_answer_and_proposal_in_one_call(monkeypatch) -> Non
     assert "SEUR ya no cubre esa zona" not in system_prompt
 
 
+def test_generation_client_reuses_connections_and_tracks_configuration(monkeypatch) -> None:
+    clients = []
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.options = kwargs
+            clients.append(self)
+
+    monkeypatch.setattr(memory_generation, "OpenAI", FakeOpenAI)
+    memory_generation._cached_generation_client.cache_clear()
+    monkeypatch.setenv("GENERATION_API_KEY", "first-key")
+    first = memory_generation._get_generation_client(timeout=30.0)
+    assert memory_generation._get_generation_client(timeout=30.0) is first
+
+    monkeypatch.setenv("GENERATION_API_KEY", "rotated-key")
+    rotated = memory_generation._get_generation_client(timeout=30.0)
+
+    assert rotated is not first
+    assert len(clients) == 2
+    assert clients[0].options["api_key"] == "first-key"
+    assert clients[1].options["api_key"] == "rotated-key"
+
+
 def test_retrieved_injection_remains_user_data_in_generation_prompt(monkeypatch) -> None:
     captured = {}
 

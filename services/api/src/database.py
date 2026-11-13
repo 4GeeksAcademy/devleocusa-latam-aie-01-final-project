@@ -6,12 +6,16 @@ The SQLModel engine connects to Supabase PostgreSQL for the inventory system.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+from threading import RLock
 from collections.abc import Generator
 from pathlib import Path
 
 from sqlmodel import Session, SQLModel, create_engine
 from tinydb import TinyDB
+from tinydb.storages import JSONStorage
 from tinydb.table import Table
 
 # ── Local paths ──────────────────────────────────────────────────────────
@@ -27,7 +31,102 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 # TinyDB – used for authentication and simple local persistence
 # ─────────────────────────────────────────────────────────────────────────
 
-db = TinyDB(DB_PATH)
+logger = logging.getLogger(__name__)
+_tinydb_lock = RLock()
+
+
+class LockedTable(Table):
+    """Make each read-modify-write table operation atomic in this process."""
+
+    def insert(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().insert(*args, **kwargs)
+
+    def insert_multiple(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().insert_multiple(*args, **kwargs)
+
+    def update(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().update(*args, **kwargs)
+
+    def update_multiple(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().update_multiple(*args, **kwargs)
+
+    def upsert(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().upsert(*args, **kwargs)
+
+    def remove(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().remove(*args, **kwargs)
+
+    def truncate(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().truncate(*args, **kwargs)
+
+    def get(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().get(*args, **kwargs)
+
+    def all(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().all(*args, **kwargs)
+
+    def search(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().search(*args, **kwargs)
+
+    def contains(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().contains(*args, **kwargs)
+
+    def count(self, *args, **kwargs):
+        with _tinydb_lock:
+            return super().count(*args, **kwargs)
+
+
+class ThreadSafeJSONStorage(JSONStorage):
+    """Serialize TinyDB file access across FastAPI worker threads.
+
+    TinyDB's JSON storage truncates the database file before writing its next
+    snapshot. Without a lock, another request can read during that brief
+    interval and fail with ``JSONDecodeError`` (or observe partial JSON).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._io_lock = _tinydb_lock
+
+    def read(self):
+        with self._io_lock:
+            try:
+                return super().read()
+            except json.JSONDecodeError:
+                # A genuinely empty file is a valid empty TinyDB database.
+                # This also recovers a file left empty by an interrupted write.
+                if self._handle is not None:
+                    self._handle.seek(0)
+                    if not self._handle.read().strip():
+                        logger.warning(
+                            "TinyDB file %s was empty; initializing it as a new database",
+                            self._handle.name,
+                        )
+                        return None
+                raise
+
+    def write(self, data):
+        with self._io_lock:
+            return super().write(data)
+
+    def close(self):
+        with self._io_lock:
+            return super().close()
+
+
+db = TinyDB(DB_PATH, storage=ThreadSafeJSONStorage)
+db.table_class = LockedTable
 suppliers_table = db.table("suppliers")
 users_table = db.table("users")
 profiles_table = db.table("profiles")

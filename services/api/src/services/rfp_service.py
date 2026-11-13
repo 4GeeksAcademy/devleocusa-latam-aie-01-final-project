@@ -30,14 +30,14 @@ from src import pipeline_adapter
 from src.database import get_engine
 from src.models.rfp import (
     DepartmentSection,
-    HITO9_DEPARTMENT_APPROVERS,
+    RFP_DEPARTMENT_APPROVERS,
     RFPDocument,
     RFPFinalDocument,
     RFPNodeTrace,
     RFPTicket,
     RFPStatus,
     SectionStatus,
-    LEGACY_TO_HITO9_DEPARTMENT,
+    LEGACY_TO_CANONICAL_DEPARTMENT,
 )
 from src.services.user_service import get_user_by_email
 from src.services.rfp_event_service import RFP_TICKET_CREATED, rfp_event_broker
@@ -47,8 +47,17 @@ logger = logging.getLogger(__name__)
 #: Upload size guard (RFPs are text PDFs; anything bigger is suspicious).
 MAX_PDF_BYTES: int = 25 * 1024 * 1024  # 25 MB
 
-#: Repo-root/data/raw — runtime artifact directory for received documents.
-RAW_DATA_DIR: Path = Path(__file__).resolve().parents[4] / "data" / "raw"
+#: Runtime artifact directory for received documents. The source tree is
+#: mounted at /app in Docker, while local execution uses the repository root.
+_source_path = Path(__file__).resolve()
+try:
+    _repo_root = _source_path.parents[4]
+except IndexError:
+    _repo_root = _source_path.parents[2]
+
+RAW_DATA_DIR: Path = Path(
+    os.getenv("RFP_RAW_DATA_DIR", str(_repo_root / "data" / "raw"))
+)
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -413,17 +422,18 @@ def process_next_proposal_ticket(max_iterations: int = 3, ticket_id: str | None 
             session.commit()
             return ticket_id
 
-    # Hito 9 activates only three departments; keep legacy rows but exclude the rest.
-    canonical_to_legacy = {value: key for key, value in LEGACY_TO_HITO9_DEPARTMENT.items()}
+    # The RFP proposal flow activates only three departments; keep legacy rows
+    # but exclude the rest.
+    canon_to_legacy = {value: key for key, value in LEGACY_TO_CANONICAL_DEPARTMENT.items()}
     active_workstreams = []
     for item in handoff.get("workstreams", []):
         if not isinstance(item, dict):
             continue
         department = str(item.get("department", ""))
-        if department in LEGACY_TO_HITO9_DEPARTMENT:
+        if department in LEGACY_TO_CANONICAL_DEPARTMENT:
             active_workstreams.append(item)
-        elif department in canonical_to_legacy:
-            active_workstreams.append({**item, "department": canonical_to_legacy[department]})
+        elif department in canon_to_legacy:
+            active_workstreams.append({**item, "department": canon_to_legacy[department]})
     handoff["workstreams"] = active_workstreams
 
     def on_update(department: str, update_payload: dict[str, Any]) -> None:
@@ -464,15 +474,15 @@ def process_next_proposal_ticket(max_iterations: int = 3, ticket_id: str | None 
 
 
 def _canonical_handoff(ticket: RFPTicket, sections: list[DepartmentSection]) -> dict[str, Any]:
-    """Return exactly the active Hito 9 workstreams, retaining Part 1 aspects."""
+    """Return exactly the active RFP workstreams, retaining Part 1 aspects."""
     raw = json.loads(ticket.handoff_payload or "{}")
     source = raw.get("workstreams") or raw.get("handoff") or []
     by_department = {str(item.get("department", "")): item for item in source if isinstance(item, dict)}
     existing_proposals = raw.get("proposal_sections", [])
     workstreams: list[dict[str, Any]] = []
     for section in sections:
-        department_id = LEGACY_TO_HITO9_DEPARTMENT.get(section.department, section.department)
-        if department_id not in HITO9_DEPARTMENT_APPROVERS:
+        department_id = LEGACY_TO_CANONICAL_DEPARTMENT.get(section.department, section.department)
+        if department_id not in RFP_DEPARTMENT_APPROVERS:
             continue
         workstream = by_department.get(section.department, by_department.get(department_id, {}))
         aspects = json.loads(section.key_aspects) if section.key_aspects else workstream.get("key_aspects", {})
@@ -482,7 +492,7 @@ def _canonical_handoff(ticket: RFPTicket, sections: list[DepartmentSection]) -> 
             "key_aspects": aspects if isinstance(aspects, dict) else {},
         })
         section.department_id = department_id
-        section.approver = HITO9_DEPARTMENT_APPROVERS[department_id]
+        section.approver = RFP_DEPARTMENT_APPROVERS[department_id]
         section.updated_at = _utcnow()
     return {
         "ticket_id": ticket.id,
@@ -502,20 +512,20 @@ def begin_human_approval(session: Session, ticket_id: str, *, graph: Any, max_it
     handoff = _canonical_handoff(ticket, sections)
     active_ids = {workstream["department"] for workstream in handoff["workstreams"]}
     for section in sections:
-        normalized = LEGACY_TO_HITO9_DEPARTMENT.get(section.department, section.department)
+        normalized = LEGACY_TO_CANONICAL_DEPARTMENT.get(section.department, section.department)
         if normalized not in active_ids:
             section.department_id = None
     session.add_all(sections)
     session.commit()
     if not handoff["workstreams"]:
-        raise ValueError("El handoff no contiene departamentos Hito 9 activos.")
+        raise ValueError("El handoff no contiene departamentos RFP activos.")
 
     generator, evaluator = pipeline_adapter.proposal_helpers()
     ticket.status = RFPStatus.GENERANDO_BORRADOR.value
     session.add(ticket)
     session.commit()
     # Isolate each workstream. An interrupt in one graph does not block peers.
-    proposal_results = {LEGACY_TO_HITO9_DEPARTMENT.get(str(item.get("department", "")), str(item.get("department", ""))): item
+    proposal_results = {LEGACY_TO_CANONICAL_DEPARTMENT.get(str(item.get("department", "")), str(item.get("department", ""))): item
                         for item in handoff.get("proposal_sections", []) if isinstance(item, dict)}
     for workstream in handoff["workstreams"]:
         department_id = workstream["department"]
@@ -549,7 +559,7 @@ def _persist_approval_state(session: Session, ticket_id: str, department_id: str
         DepartmentSection.department_id == department_id,
     )).first()
     if section is None:
-        raise ValueError(f"Sección Hito 9 ausente: {department_id}")
+        raise ValueError(f"Sección RFP ausente: {department_id}")
     section.proposal_draft = str(state.get("draft") or section.proposal_draft or "")
     section.evaluation_result = json.dumps(state.get("evaluation_result") or {}, ensure_ascii=False)
     section.approval_iteration_count = int(state.get("iteration_count", section.approval_iteration_count))
@@ -604,7 +614,7 @@ def submit_department_decision(
     session: Session, *, ticket_id: str, department_id: str,
     user_email: str, decision: dict[str, str],
 ) -> dict[str, Any]:
-    if department_id not in HITO9_DEPARTMENT_APPROVERS:
+    if department_id not in RFP_DEPARTMENT_APPROVERS:
         raise ValueError("Departamento inválido.")
     assigned_email = _approver_email(department_id)
     if assigned_email.casefold().endswith(".example") and (
@@ -654,13 +664,13 @@ def _submit_decision_with_runtime(
             workstream=workstream, summary=ticket.synthesis_summary or "",
             max_iterations=3, generator=generator, evaluator=evaluator, resume=decision,
         )
-    _persist_approval_state(session, ticket_id, department_id, state)
+    _persist_approval_state(session, ticket.id, department_id, state)
     section = session.exec(select(DepartmentSection).where(
-        DepartmentSection.ticket_id == ticket_id,
+        DepartmentSection.ticket_id == ticket.id,
         DepartmentSection.department_id == department_id,
     )).first()
     assert section is not None
-    section.approver = HITO9_DEPARTMENT_APPROVERS[department_id]
+    section.approver = RFP_DEPARTMENT_APPROVERS[department_id]
     section.approval_comment = decision.get("comment") or None
     if state.get("approval_status") == "approved":
         section.approved_at = _utcnow()

@@ -63,7 +63,7 @@ export default function OutboundOrderPage() {
     [products, selectedSkuId]
   );
 
-  const availableStock = selectedProduct?.current_stock ?? 0;
+  const availableStock = selectedProduct?.available_stock ?? selectedProduct?.current_stock ?? 0;
   const requestedQty = parseInt(quantity, 10) || 0;
 
   // ── Validation ────────────────────────────────────────────────────
@@ -91,10 +91,9 @@ export default function OutboundOrderPage() {
         quantity: requestedQty,
       });
 
-      const skuCode = selectedProduct?.sku_code ?? selectedSkuId;
       setFeedback({
         kind: "success",
-        message: `Salida registrada: -${result.quantity} uds. para SKU "${skuCode}".`,
+        message: `Salida ${result.id} registrada: ${requestedQty} unidades descontadas del stock.`,
       });
 
       // Limpiar formulario
@@ -189,8 +188,7 @@ export default function OutboundOrderPage() {
           Registrar Salida (Outbound)
         </h1>
         <p className="mt-1 text-sm text-slate-600">
-          Reduce el stock de un producto. El sistema valida disponibilidad
-          antes y durante el envío.
+          Registra una salida de inventario. El stock se actualiza inmediatamente.
         </p>
       </div>
 
@@ -223,7 +221,7 @@ export default function OutboundOrderPage() {
               <option value="">— Selecciona un producto —</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.sku_code} — {p.name} ({p.warehouse})
+                  {p.sku_code} — {p.name} ({p.warehouse}) · disponible: {p.available_stock ?? p.current_stock}
                 </option>
               ))}
             </select>
@@ -260,9 +258,12 @@ export default function OutboundOrderPage() {
                   {availableStock} uds.
                 </span>
               </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Stock actual: {selectedProduct.current_stock} uds.
+              </p>
               {availableStock === 0 && (
                 <p className="mt-1 text-xs text-red-600">
-                  Este producto está agotado. No es posible registrar salidas.
+                  No hay unidades disponibles para retirar.
                 </p>
               )}
             </div>
@@ -294,7 +295,7 @@ export default function OutboundOrderPage() {
             />
 
             {/* ── Inline validation messages ───────────────────── */}
-            <div className="mt-1.5 min-h-[1.25rem] space-y-1">
+            <div className="mt-1.5 min-h-5 space-y-1">
               {selectedProduct && qtyInvalid && (
                 <p className="text-xs text-red-600">
                   La cantidad debe ser al menos 1.
@@ -304,7 +305,7 @@ export default function OutboundOrderPage() {
               {qtyExceedsStock && (
                 <p className="flex items-center gap-1 text-xs font-medium text-red-600">
                   <svg
-                    className="h-3.5 w-3.5 flex-shrink-0"
+                    className="h-3.5 w-3.5 shrink-0"
                     fill="none"
                     viewBox="0 0 24 24"
                     strokeWidth={2}
@@ -324,7 +325,7 @@ export default function OutboundOrderPage() {
               {serverQtyError && (
                 <p className="flex items-center gap-1 text-xs font-medium text-red-600">
                   <svg
-                    className="h-3.5 w-3.5 flex-shrink-0"
+                    className="h-3.5 w-3.5 shrink-0"
                     fill="none"
                     viewBox="0 0 24 24"
                     strokeWidth={2}
@@ -352,7 +353,7 @@ export default function OutboundOrderPage() {
               {submitting && (
                 <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
               )}
-              {submitting ? "Registrando…" : "Confirmar salida"}
+              {submitting ? "Enviando solicitud…" : "Enviar solicitud"}
             </button>
 
             <Link
@@ -360,6 +361,12 @@ export default function OutboundOrderPage() {
               className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               Cancelar
+            </Link>
+            <Link
+              href="/backoffice/inventory/orders/requests"
+              className="rounded-lg px-3 py-2.5 text-sm font-medium text-cyan-700 hover:underline"
+            >
+              Ver solicitudes
             </Link>
           </div>
         </div>

@@ -62,10 +62,39 @@ async function parseJson<T>(response: Response): Promise<T | null> {
   }
 }
 
+/**
+ * Error de API con el status HTTP adjunto.
+ *
+ * La UI lo usa para distinguir una sesión caducada (401) de una cuenta sin
+ * organización asignada (403), en lugar de mostrar siempre el mismo texto.
+ */
+export class IncidentsApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "IncidentsApiError";
+    this.status = status;
+  }
+}
+
+/** Traduce un status HTTP a un mensaje que el usuario pueda accionar. */
+function messageForStatus(status: number, fallback: string): string {
+  if (status === 401) {
+    return "Tu sesión caducó. Vuelve a iniciar sesión.";
+  }
+
+  if (status === 403) {
+    return "Tu cuenta no tiene una organización asignada. Contacta al administrador.";
+  }
+
+  return fallback;
+}
+
 function toFriendlyFieldName(field: string): string {
-  if (field === "title") return "titulo";
-  if (field === "description") return "descripcion";
-  if (field === "category") return "categoria";
+  if (field === "title") return "título";
+  if (field === "description") return "descripción";
+  if (field === "category") return "categoría";
   if (field === "status") return "estado";
   if (field === "origin") return "origen";
   if (field === "branch") return "sede";
@@ -79,9 +108,9 @@ function normalizeFieldErrorMessage(rawMessage: string, field: string): string {
 
   return rawMessage
     .replace("El campo", "El campo")
-    .replace("title", "titulo")
-    .replace("description", "descripcion")
-    .replace("category", "categoria")
+    .replace("title", "título")
+    .replace("description", "descripción")
+    .replace("category", "categoría")
     .replace("status", "estado")
     .replace("origin", "origen")
     .replace("branch", "sede");
@@ -136,13 +165,20 @@ export async function listIncidents(filters: {
     const response = await apiFetch(endpoint);
 
     if (!response.ok) {
-      throw new Error("No se pudo cargar el listado de incidencias.");
+      throw new IncidentsApiError(
+        messageForStatus(response.status, "No se pudo cargar el listado de incidencias."),
+        response.status,
+      );
     }
 
     const data = await parseJson<Incident[]>(response);
     return data ?? [];
-  } catch {
-    throw new Error("No se pudo cargar el listado de incidencias.");
+  } catch (error) {
+    if (error instanceof IncidentsApiError) {
+      throw error;
+    }
+
+    throw new IncidentsApiError("No se pudo cargar el listado de incidencias.", 0);
   }
 }
 
@@ -183,17 +219,27 @@ export async function getIncidentsSummary(): Promise<IncidentSummary> {
     const response = await apiFetch("/api/incidents/summary");
 
     if (!response.ok) {
-      throw new Error("No se pudo cargar el resumen de incidencias.");
+      throw new IncidentsApiError(
+        messageForStatus(response.status, "No se pudo cargar el resumen de incidencias."),
+        response.status,
+      );
     }
 
     const data = await parseJson<IncidentSummary>(response);
     if (!data) {
-      throw new Error("No se pudo procesar la respuesta del servidor al obtener el resumen.");
+      throw new IncidentsApiError(
+        "No se pudo procesar la respuesta del servidor al obtener el resumen.",
+        response.status,
+      );
     }
 
     return data;
-  } catch {
-    throw new Error("No se pudo cargar el resumen de incidencias.");
+  } catch (error) {
+    if (error instanceof IncidentsApiError) {
+      throw error;
+    }
+
+    throw new IncidentsApiError("No se pudo cargar el resumen de incidencias.", 0);
   }
 }
 

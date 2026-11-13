@@ -50,6 +50,29 @@ class SKURead(BaseModel):
         description="Computed stock (total entries − total exits). "
         "Not stored in the database; calculated at query time.",
     )
+    available_stock: int = Field(
+        default=0,
+        description="Stock not reserved by pending outbound requests.",
+    )
+
+
+class PendingSKUExitRead(BaseModel):
+    """Outbound request with the product and stock context for reviewers."""
+
+    request_id: str
+    sku_id: str
+    sku_code: str
+    sku_name: str
+    warehouse: str
+    quantity: int
+    status: str
+    requester_uuid: str
+    approver_uuid: Optional[str] = None
+    decision_comment: Optional[str] = None
+    created_at: datetime
+    decided_at: Optional[datetime] = None
+    current_stock: int
+    available_stock: int
 
 
 # ── SKUEntry (inbound orders) ────────────────────────────────────────────

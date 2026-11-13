@@ -41,6 +41,11 @@ interface LoginResponse {
   jwt?: string;
 }
 
+export interface CurrentUser {
+  email: string;
+  role: string;
+}
+
 interface ApiErrorResponse {
   detail?: string;
   message?: string;
@@ -49,6 +54,10 @@ interface ApiErrorResponse {
 
 function resolveEndpointUrl(endpoint: string): string {
   return `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+}
+
+export function getApiBaseUrl(): string {
+  return API_BASE_URL.replace(/\/$/, '');
 }
 
 function getErrorMessage(payload: ApiErrorResponse | null, fallback: string): string {
@@ -67,6 +76,33 @@ async function parseErrorResponse(response: Response): Promise<ApiErrorResponse 
   }
 }
 
+/**
+ * Evento emitido cuando el backend responde 401 a una petición autenticada.
+ *
+ * No borra el token ni navega: sólo notifica, para que la propia vista pueda
+ * mostrar un mensaje accionable. La navegación la decide `ProtectedRoute`,
+ * que es el único guard que conoce el estado completo de la sesión.
+ */
+export const SESSION_EXPIRED_EVENT = 'trackflow:session-expired';
+
+function notifySessionExpired(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+}
+
+/** Indica si la respuesta corresponde a credenciales ausentes o caducadas. */
+export function isUnauthorized(response: Response): boolean {
+  return response.status === 401;
+}
+
+/** Indica si la respuesta es un rechazo de autorización (permisos o tenant). */
+export function isForbidden(response: Response): boolean {
+  return response.status === 403;
+}
+
 export function getSessionToken(): string | null {
   if (typeof window === 'undefined') {
     return null;
@@ -81,6 +117,14 @@ export function setSessionToken(token: string): void {
 
 export function clearSessionToken(): void {
   localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+export async function getCurrentUser(): Promise<CurrentUser> {
+  const response = await apiFetch('/auth/me');
+  if (!response.ok) {
+    throw new Error('No fue posible consultar el usuario autenticado.');
+  }
+  return (await response.json()) as CurrentUser;
 }
 
 export function logout(): void {
@@ -116,13 +160,20 @@ export async function apiFetch(endpoint: string, options: ApiFetchOptions = {}):
       headers: requestHeaders,
     });
 
-    if (response.status === 401) {
-      logout();
+    // Un 401 en una petición autenticada significa sesión caducada o token
+    // inválido. Antes se ejecutaba `logout()` aquí, que hacía
+    // `window.location.assign('/login')` y desmontaba la pantalla en curso
+    // sin mostrar el error. Ahora sólo se notifica: cada vista decide cómo
+    // informarlo y `ProtectedRoute` gestiona la redirección cuando toca.
+    // Las peticiones `skipAuth` (login, registro) devuelven 401 por
+    // credenciales inválidas y no son una sesión caducada.
+    if (response.status === 401 && !skipAuth) {
+      notifySessionExpired();
     }
 
     return response;
   } catch {
-    throw new Error('No fue posible comunicarse con el servidor. Revisa tu conexion e intenta nuevamente.');
+    throw new Error('No fue posible comunicarse con el servidor. Revisa tu conexión e intenta nuevamente.');
   }
 }
 
@@ -167,16 +218,16 @@ export async function login(payload: LoginPayload): Promise<string> {
 
     if (!response.ok) {
       if (response.status === 401) {
-        throw new Error('Credenciales invalidas.');
+        throw new Error('Credenciales inválidas.');
       }
 
-      throw new Error(getErrorMessage(responseData, 'No fue posible iniciar sesion.'));
+      throw new Error(getErrorMessage(responseData, 'No fue posible iniciar sesión.'));
     }
 
     const token = responseData.token || responseData.access_token || responseData.jwt;
 
     if (!token) {
-      throw new Error('La respuesta de autenticacion no incluye un token valido.');
+      throw new Error('La respuesta de autenticación no incluye un token válido.');
     }
 
     return token;
@@ -185,7 +236,7 @@ export async function login(payload: LoginPayload): Promise<string> {
       throw error;
     }
 
-    throw new Error('No fue posible iniciar sesion. Intenta nuevamente.');
+    throw new Error('No fue posible iniciar sesión. Intenta nuevamente.');
   }
 }
 
@@ -232,7 +283,7 @@ export async function forgotPassword(payload: ForgotPasswordPayload): Promise<vo
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
       throw new Error(
-        getErrorMessage(errorData, 'No fue posible procesar la solicitud de recuperacion.')
+        getErrorMessage(errorData, 'No fue posible procesar la solicitud de recuperación.')
       );
     }
   } catch (error) {
@@ -240,7 +291,7 @@ export async function forgotPassword(payload: ForgotPasswordPayload): Promise<vo
       throw error;
     }
 
-    throw new Error('No fue posible procesar la solicitud de recuperacion.');
+    throw new Error('No fue posible procesar la solicitud de recuperación.');
   }
 }
 
@@ -260,14 +311,14 @@ export async function resetPassword(payload: ResetPasswordPayload): Promise<void
 
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
-      throw new Error(getErrorMessage(errorData, 'No fue posible restablecer la contrasena.'));
+      throw new Error(getErrorMessage(errorData, 'No fue posible restablecer la contraseña.'));
     }
   } catch (error) {
     if (error instanceof Error) {
       throw error;
     }
 
-    throw new Error('No fue posible restablecer la contrasena. Intenta nuevamente.');
+    throw new Error('No fue posible restablecer la contraseña. Intenta nuevamente.');
   }
 }
 
@@ -286,13 +337,13 @@ export async function changePassword(payload: ChangePasswordPayload): Promise<vo
 
     if (!response.ok) {
       const errorData = await parseErrorResponse(response);
-      throw new Error(getErrorMessage(errorData, 'No fue posible cambiar la contrasena.'));
+      throw new Error(getErrorMessage(errorData, 'No fue posible cambiar la contraseña.'));
     }
   } catch (error) {
     if (error instanceof Error) {
       throw error;
     }
 
-    throw new Error('No fue posible cambiar la contrasena. Intenta nuevamente.');
+    throw new Error('No fue posible cambiar la contraseña. Intenta nuevamente.');
   }
 }

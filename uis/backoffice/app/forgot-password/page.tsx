@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
     <section className="flex min-h-[calc(100vh-4rem)] items-center justify-center py-8">
       <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="mb-6 space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Recuperar contrasena</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Recuperar contraseña</h2>
           <p className="text-sm text-slate-600">
             Ingresa tu email y te enviaremos instrucciones para restablecer tu acceso.
           </p>
@@ -45,7 +45,7 @@ export default function ForgotPasswordPage() {
 
         {hasSubmitted ? (
           <Alert variant="success" title="Solicitud enviada">
-            Si esa direccion esta registrada, recibiras un enlace en breve.
+            Si esa dirección esta registrada, recibiras un enlace en breve.
           </Alert>
         ) : null}
 
@@ -79,14 +79,14 @@ export default function ForgotPasswordPage() {
             disabled={isFormDisabled}
             className="inline-flex w-full items-center justify-center rounded-md bg-sky-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {isSubmitting ? 'Enviando...' : 'Enviar enlace de recuperacion'}
+            {isSubmitting ? 'Enviando...' : 'Enviar enlace de recuperación'}
           </button>
         </form>
 
         <p className="mt-4 text-center text-sm text-slate-600">
           Volver a{' '}
           <Link href="/login" className="font-medium text-sky-700 hover:text-sky-800 hover:underline">
-            Iniciar sesion
+            Iniciar sesión
           </Link>
         </p>
       </div>

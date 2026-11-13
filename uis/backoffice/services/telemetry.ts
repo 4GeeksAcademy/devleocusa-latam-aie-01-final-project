@@ -11,17 +11,25 @@
  *   track('page_view', { page: '/dashboard' });
  */
 
-const DEFAULT_ENDPOINT = 'http://localhost:8000/telemetry/events';
-
 function resolveEndpoint(): string {
   if (
     typeof process !== 'undefined' &&
     typeof process.env === 'object'
   ) {
     const env = process.env as Record<string, string | undefined>;
-    return env.NEXT_PUBLIC_TELEMETRY_ENDPOINT || DEFAULT_ENDPOINT;
+    const configuredEndpoint = env.NEXT_PUBLIC_TELEMETRY_ENDPOINT;
+    if (configuredEndpoint) {
+      const url = new URL(configuredEndpoint, env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000');
+      if (url.pathname.replace(/\/$/, '') === '/telemetry' || url.pathname.replace(/\/$/, '') === '') {
+        url.pathname = '/telemetry/events';
+      }
+      return url.toString();
+    }
+
+    const apiBaseUrl = env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    return `${apiBaseUrl.replace(/\/$/, '')}/telemetry/events`;
   }
-  return DEFAULT_ENDPOINT;
+  return 'http://localhost:8000/telemetry/events';
 }
 
 // ── Queue ────────────────────────────────────────────────────────────────

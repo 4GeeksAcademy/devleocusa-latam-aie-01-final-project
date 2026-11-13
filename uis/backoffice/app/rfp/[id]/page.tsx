@@ -191,7 +191,7 @@ export default function RfpTicketDetailPage() {
           {doc && (
             <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="mb-3 text-lg font-semibold text-slate-900">
-                📄 Documento detectado
+                Documento detectado
               </h2>
               <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
                 <Field label="Título" value={doc.title} />
@@ -219,7 +219,7 @@ export default function RfpTicketDetailPage() {
           {ticket.synthesis_summary && (
             <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="mb-2 text-lg font-semibold text-slate-900">
-                🧠 Resumen para Ventas
+                Resumen para ventas
               </h2>
               <p className="text-sm leading-relaxed text-slate-800">
                 {ticket.synthesis_summary}
@@ -229,7 +229,7 @@ export default function RfpTicketDetailPage() {
 
           <section className="mt-6">
             <h2 className="mb-3 text-lg font-semibold text-slate-900">
-              🗂️ Aspectos clave por departamento ({sections.length})
+              Aspectos clave por departamento ({sections.length})
             </h2>
             {sections.length === 0 ? (
               <p className="text-sm text-slate-500">

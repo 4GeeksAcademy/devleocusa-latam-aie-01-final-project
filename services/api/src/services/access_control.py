@@ -146,3 +146,15 @@ def require_incident_writer(
             detail="Operación reservada a personal autorizado de TrackFlow.",
         )
     return current_user
+
+
+def require_manager(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Allow only managers to access the lead-management module."""
+    if current_user.role != UserRole.MANAGER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso reservado a managers.",
+        )
+    return current_user

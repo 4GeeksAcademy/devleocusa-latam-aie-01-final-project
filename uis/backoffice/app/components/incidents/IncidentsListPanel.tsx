@@ -11,6 +11,11 @@ import {
   listIncidents,
   patchIncidentStatus,
 } from "../../../services/incidentsApi";
+import {
+  getIncidentCategoryLabel,
+  getIncidentOriginLabel,
+  getIncidentStatusLabel,
+} from "../../../lib/incidentsMappings";
 
 type ToastKind = "success" | "error";
 
@@ -23,6 +28,27 @@ interface IncidentsListPanelProps {
 const statusOptions: IncidentStatus[] = ["open", "in_progress", "resolved", "discarded"];
 const originOptions: IncidentOrigin[] = ["customer", "branch", "internal"];
 const branchOptions: IncidentBranch[] = ["Los Ángeles", "Zaragoza", "Central"];
+
+/**
+ * Estados que el backend considera terminales: no admiten ninguna transición.
+ * Una vez que una incidencia queda "resolved" o "discarded", el estado es fijo.
+ */
+const TERMINAL_STATUSES: ReadonlySet<IncidentStatus> = new Set(["resolved", "discarded"]);
+
+/** Transiciones permitidas por el backend (espejo de ALLOWED_STATUS_TRANSITIONS). */
+const ALLOWED_TRANSITIONS: Record<IncidentStatus, IncidentStatus[]> = {
+  open: ["open", "in_progress", "discarded"],
+  in_progress: ["in_progress", "resolved", "discarded"],
+  resolved: [],
+  discarded: [],
+};
+
+const TERMINAL_BADGE_CLASSES: Record<IncidentStatus, string> = {
+  open: "",
+  in_progress: "",
+  resolved: "bg-emerald-100 text-emerald-800 ring-emerald-200",
+  discarded: "bg-rose-100 text-rose-900 ring-rose-200",
+};
 
 export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: IncidentsListPanelProps) {
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -49,8 +75,12 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
     try {
       const data = await listIncidents(activeFilters);
       setIncidents(data);
-    } catch {
-      setError("No se pudo cargar el listado de incidencias.");
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "No se pudo cargar el listado de incidencias.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +138,7 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
             <option value="">Todos</option>
             {statusOptions.map((status) => (
               <option key={status} value={status}>
-                {status}
+                {getIncidentStatusLabel(status)}
               </option>
             ))}
           </select>
@@ -124,7 +154,7 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
             <option value="">Todos</option>
             {originOptions.map((origin) => (
               <option key={origin} value={origin}>
-                {origin}
+                {getIncidentOriginLabel(origin)}
               </option>
             ))}
           </select>
@@ -169,9 +199,9 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
 
         {!isLoading && !error && incidents.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
-            <p className="text-4xl" aria-hidden="true">
-              📭
-            </p>
+            <svg className="mx-auto h-8 w-8 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5h18v11.25A2.25 2.25 0 0 1 18.75 21h-13.5A2.25 2.25 0 0 1 3 18.75V7.5Zm0 0 2.25-4.5h13.5L21 7.5m-18 0h5.25l1.5 3h4.5l1.5-3H21" />
+            </svg>
             <h3 className="mt-3 text-lg font-semibold text-slate-800">No hay incidencias que coincidan con estos filtros</h3>
             <p className="mt-2 text-sm text-slate-600">Ajusta los filtros o registra una nueva incidencia.</p>
           </div>
@@ -183,8 +213,8 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
               <caption className="sr-only">Listado operativo de incidencias</caption>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500">
-                  <th className="px-3 py-3 font-semibold">Titulo</th>
-                  <th className="px-3 py-3 font-semibold">Categoria</th>
+                  <th className="px-3 py-3 font-semibold">Título</th>
+                  <th className="px-3 py-3 font-semibold">Categoría</th>
                   <th className="px-3 py-3 font-semibold">Origen</th>
                   <th className="px-3 py-3 font-semibold">Sede</th>
                   <th className="px-3 py-3 font-semibold">Estado</th>
@@ -195,25 +225,37 @@ export function IncidentsListPanel({ refreshToken, onChanged, onNotify }: Incide
                 {incidents.map((incident) => (
                   <tr key={incident.id} className="border-b border-slate-100 last:border-b-0">
                     <td className="px-3 py-3">
-                      <p className="font-medium text-slate-900">{incident.title || 'Sin titulo'}</p>
-                      <p className="mt-1 text-xs text-slate-500 line-clamp-2">{incident.description || 'Sin descripcion'}</p>
+                      <p className="font-medium text-slate-900">{incident.title || 'Sin título'}</p>
+                      <p className="mt-1 text-xs text-slate-500 line-clamp-2">{incident.description || 'Sin descripción'}</p>
                     </td>
-                    <td className="px-3 py-3 text-slate-700">{incident.category || 'Sin categoria'}</td>
-                    <td className="px-3 py-3 text-slate-700">{incident.origin || 'Sin origen'}</td>
+                    <td className="px-3 py-3 text-slate-700">
+                      {incident.category ? getIncidentCategoryLabel(incident.category) : "Sin categoría"}
+                    </td>
+                    <td className="px-3 py-3 text-slate-700">
+                      {incident.origin ? getIncidentOriginLabel(incident.origin) : "Sin origen"}
+                    </td>
                     <td className="px-3 py-3 text-slate-700">{incident.branch || 'Sin sede'}</td>
                     <td className="px-3 py-3">
-                      <select
-                        value={incident.status}
-                        onChange={(event) => void handleStatusChange(incident.id, event.target.value as IncidentStatus)}
-                        disabled={Boolean(pendingStatusById[incident.id])}
-                        className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-800 disabled:opacity-60"
-                      >
-                        {statusOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
+                      {TERMINAL_STATUSES.has(incident.status) ? (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${TERMINAL_BADGE_CLASSES[incident.status]}`}
+                        >
+                          {getIncidentStatusLabel(incident.status)}
+                        </span>
+                      ) : (
+                        <select
+                          value={incident.status}
+                          onChange={(event) => void handleStatusChange(incident.id, event.target.value as IncidentStatus)}
+                          disabled={Boolean(pendingStatusById[incident.id])}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-800 disabled:opacity-60"
+                        >
+                          {ALLOWED_TRANSITIONS[incident.status].map((option) => (
+                            <option key={option} value={option}>
+                              {getIncidentStatusLabel(option)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-xs text-slate-500">
                       {incident.updated_at ? new Date(incident.updated_at).toLocaleString("es-ES") : 'Sin fecha'}

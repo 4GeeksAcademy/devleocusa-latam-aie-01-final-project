@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
 from src.cache import inventory_products_cache, inventory_product_cache
 from src.database import get_sql_session
-from datetime import datetime, timezone
-
 from src.models.models import PendingSKUExit, SKU, SKUEntry, SKUExit
 from src.models.schemas import (
     SKUCreate,
@@ -45,14 +45,28 @@ def _compute_current_stock(session: Session, sku_id: str) -> int:
 
 
 def _build_sku_read(session: Session, sku: SKU) -> SKURead:
-    """Build a SKURead response with the computed current_stock."""
+    """Build a SKURead response with the current ledger balance."""
+    current_stock = _compute_current_stock(session, sku.id)
     return SKURead(
         id=sku.id,
         name=sku.name,
         sku_code=sku.sku_code,
         warehouse=sku.warehouse,
-        current_stock=_compute_current_stock(session, sku.id),
+        current_stock=current_stock,
+        available_stock=current_stock,
     )
+
+
+def _lock_sku(session: Session, sku_id: str) -> SKU | None:
+    """Lock a SKU row to serialize outbound stock checks and updates."""
+    return session.exec(
+        select(SKU).where(SKU.id == sku_id).with_for_update()
+    ).first()
+
+
+def _invalidate_sku_caches(sku_id: str) -> None:
+    inventory_products_cache.invalidate("all")
+    inventory_product_cache.invalidate(sku_id)
 
 
 def _emit_outbound_rejected(
@@ -211,7 +225,6 @@ def create_inbound_order(
     injected from the authenticated user's token.
     """
 
-    # Verify the SKU exists
     sku = db.get(SKU, payload.sku_id)
     if sku is None:
         raise HTTPException(
@@ -254,22 +267,19 @@ def create_outbound_order(
 ) -> dict[str, object]:
     """Create a pending outbound request; a second operator must approve it.
 
-    **Business rule:** stock must not go negative.  If the resulting
-    stock would be < 0 the transaction is rejected with HTTP 400.
-    The ``user_uuid`` is injected from the authenticated user's token.
+    Stock cannot become negative, and the request is not dispatched until a
+    different warehouse supervisor approves it. The requester identity is
+    always taken from the authenticated user's token.
     """
-
-    # Verify the SKU exists
-    sku = db.get(SKU, payload.sku_id)
+    # Lock the SKU row to serialize outbound stock checks and requests.
+    sku = _lock_sku(db, payload.sku_id)
     if sku is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"SKU con id '{payload.sku_id}' no encontrado.",
         )
 
-    # Compute current stock before persisting the exit
     current_stock = _compute_current_stock(db, payload.sku_id)
-
     if current_stock - payload.quantity < 0:
         # ── False-alarm detection ────────────────────────────────────
         # Calculate user_error_probability: if the operator requested
@@ -295,7 +305,7 @@ def create_outbound_order(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 f"Stock insuficiente para el SKU '{payload.sku_id}'. "
-                f"Stock actual: {current_stock}, "
+                f"Stock disponible: {current_stock}, "
                 f"salida solicitada: {payload.quantity}."
             ),
         )

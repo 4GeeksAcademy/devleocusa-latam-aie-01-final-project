@@ -122,6 +122,27 @@ async def invoke_agent(
         "question": effective_question,
         "user_id": user_id or "",
         "memories": [item.content for item in loaded_memories],
+        # A thread_id intentionally spans the whole chat, so the checkpointer
+        # restores the previous turn's state. Explicitly reset every
+        # turn-scoped field; otherwise a prior guardrail_event, route, answer,
+        # or completed source can affect the next user message.
+        "context": [],
+        "sources": [],
+        "completed_sources": [],
+        "incident_query": {},
+        "inventory_query": "",
+        "incident_result": {},
+        "inventory_result": {},
+        "route_error": "",
+        "answer": "",
+        "error": "",
+        "memory_proposal": None,
+        "pending_proposal": None,
+        "guardrail_action": "allow",
+        "guardrail_category": "",
+        "guardrail_reason": "",
+        "guardrail_event": {},
+        "routing_decision": {},
     }
     if (
         cached_routing_decision is not None

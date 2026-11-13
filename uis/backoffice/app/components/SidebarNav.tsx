@@ -3,51 +3,58 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { apiFetch } from "@/services/authApi";
+import { getCurrentUser } from "@/services/authApi";
 
 type NavItem = {
   href: string;
   label: string;
+  nested?: boolean;
 };
 
 const navItems: NavItem[] = [
   { href: "/", label: "Inicio" },
-  { href: "/account/profile", label: "Mi perfil" },
-  { href: "/account/change-password", label: "Cambiar contraseña" },
+  { href: "/account/user", label: "Mi usuario" },
   { href: "/admin/access", label: "Roles y departamentos" },
   { href: "/candidaturas", label: "Candidaturas" },
-  { href: "/leads", label: "Leads" },
-  { href: "/operaciones", label: "Operaciones" },
+  { href: "/leads", label: "Prospectos" },
   { href: "/operaciones/inventario", label: "Inventario operativo" },
-  { href: "/backoffice/inventory/products", label: "Productos / SKU" },
-  { href: "/backoffice/inventory/orders", label: "─ Historial de Órdenes" },
-  { href: "/backoffice/inventory/orders/inbound", label: "─ Registrar Entrada" },
-  { href: "/backoffice/inventory/orders/outbound", label: "─ Registrar Salida" },
   { href: "/operaciones/proveedores", label: "Directorio de proveedores" },
-  { href: "/operaciones/incidencias", label: "Gestion de incidencias" },
-  { href: "/knowledge", label: "📚 Base de Conocimiento" },
-  { href: "/rfp", label: "📥 Recepción de RFPs" },
-  { href: "/telemetry", label: "📡 Radar de Telemetría" },
+  { href: "/operaciones/incidencias", label: "Gestión de incidencias" },
+  { href: "/knowledge", label: "Base de conocimiento" },
+  { href: "/rfp", label: "Recepción de RFPs" },
+  { href: "/telemetry", label: "Radar de telemetría" },
   { href: "/reporting", label: "Reporting ejecutivo" },
 ];
 
 export function SidebarNav() {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canAccessLeads, setCanAccessLeads] = useState(false);
 
   useEffect(() => {
     let active = true;
-    void apiFetch("/auth/me")
-      .then(async (response) => {
-        if (!response.ok) return;
-        const me = (await response.json()) as { role?: string };
-        if (active) setIsAdmin(me.role === "admin");
+    getCurrentUser()
+      .then((user) => {
+        if (active) {
+          setIsAdmin(user.role === "admin");
+          setCanAccessLeads(
+            user.role === "admin" ||
+              ((user.role === "user" || user.role === "manager") &&
+                user.department === "Comercial y Relación con Clientes"),
+          );
+        }
       })
       .catch(() => undefined);
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const visibleItems = navItems.filter((item) => item.href !== "/admin/access" || isAdmin);
+  const visibleItems = navItems.filter((item) => {
+    if (item.href === "/admin/access") return isAdmin;
+    if (item.href === "/leads") return canAccessLeads;
+    return true;
+  });
 
   return (
     <nav aria-label="Navegación del dashboard">
@@ -62,8 +69,8 @@ export function SidebarNav() {
                 aria-current={isActive ? "page" : undefined}
                 className={
                   isActive
-                    ? "block rounded-lg bg-slate-800 px-3 py-2 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
-                    : "block rounded-lg px-3 py-2 text-slate-300 hover:bg-slate-800 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+                    ? `block rounded-lg py-2 pr-3 font-medium text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 ${item.nested ? "ml-3 border-l border-slate-600 pl-5" : "px-3"}`
+                    : `block rounded-lg py-2 pr-3 text-slate-300 hover:bg-slate-800 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300 ${item.nested ? "ml-3 border-l border-slate-600 pl-5" : "px-3"}`
                 }
               >
                 {item.label}

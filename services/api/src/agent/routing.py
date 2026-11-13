@@ -2,25 +2,37 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 
 from openai import OpenAI
 
 from src.agent.state import RoutingDecision
 
 
+@lru_cache(maxsize=8)
+def _cached_router_client(client_class, api_key, base_url):
+    """Reuse the router's HTTP connection pool between classifications."""
+    return client_class(api_key=api_key, base_url=base_url, timeout=10.0)
+
+
+def _get_router_client():
+    return _cached_router_client(
+        OpenAI,
+        os.getenv("GENERATION_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        os.getenv("GENERATION_BASE_URL", "https://api.openai.com/v1"),
+    )
+
+
 def classify_question(question: str) -> RoutingDecision:
     """Classify scope and choose live sources using a validated JSON response."""
-    client = OpenAI(
-        api_key=os.getenv("GENERATION_API_KEY") or os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("GENERATION_BASE_URL", "https://api.openai.com/v1"),
-        timeout=10.0,
-    )
+    client = _get_router_client()
     response = client.chat.completions.create(
         model=os.getenv(
             "AGENT_ROUTER_MODEL",
             os.getenv("GENERATION_MODEL_ID", "gpt-4o-mini"),
         ),
         response_format={"type": "json_object"},
+        max_tokens=160,
         messages=[
             {
                 "role": "system",

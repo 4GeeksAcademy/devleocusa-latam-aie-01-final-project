@@ -1,7 +1,7 @@
 # ── TrackFlow API – uv-optimized Dockerfile ────────────────────────────
 # Uses Python slim image and uv for fast, reliable dependency installation.
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # ── System libraries for WeasyPrint PDF rendering ──────────────────────
 RUN apt-get update \
@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 
 # ── Copy dependency manifests first (Docker layer caching) ──────────────
-COPY api/requirements.txt requirements.txt
+COPY services/api/requirements.txt requirements.txt
 
 # ── Install system & Python dependencies ────────────────────────────────
 # --system flag installs packages into the global Python environment
@@ -33,9 +33,12 @@ COPY api/requirements.txt requirements.txt
 RUN uv pip install --system --no-cache-dir -r requirements.txt
 
 # ── Copy application source code ────────────────────────────────────────
-COPY api/ .
-COPY telemetry/ /app/telemetry/
-COPY reporting/ /app/reporting/
+COPY services/api/ .
+COPY services/telemetry/ /app/telemetry/
+COPY services/reporting/ /app/reporting/
+# RFP intake is a local package, not a PyPI dependency. Include it in the
+# image so production works without the development-only Compose bind mount.
+COPY data/pipelines/src/ /app/data/pipelines/src/
 
 # ── Port ────────────────────────────────────────────────────────────────
 EXPOSE 8000

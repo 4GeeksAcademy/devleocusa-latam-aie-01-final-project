@@ -343,8 +343,9 @@ def submit_rfp_department_decision(
 ) -> dict[str, Any]:
     """Resume one department's durable graph; ownership is checked server-side."""
     try:
-        from rfp_intake.approval import validate_decision
-        decision = validate_decision(payload.model_dump())
+        from src.pipeline_adapter import validate_department_decision
+
+        decision = validate_department_decision(payload.model_dump())
         state = rfp_service.submit_department_decision(
             session,
             ticket_id=ticket_id,

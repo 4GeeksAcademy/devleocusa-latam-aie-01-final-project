@@ -68,7 +68,7 @@ export default function EditCandidatePage() {
     return (
       <Alert variant="error" title="Error al cargar candidato">
         <div className="space-y-3">
-          <p>{error || 'No se encontro informacion del candidato.'}</p>
+          <p>{error || 'No se encontró información del candidato.'}</p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -91,9 +91,19 @@ export default function EditCandidatePage() {
 
   return (
     <section className="space-y-4">
+      <Link
+        href="/candidaturas"
+        className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+      >
+        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+        </svg>
+        Volver al listado de candidatos
+      </Link>
+
       <header>
         <h2 className="text-xl font-semibold text-slate-900">Editar candidatura</h2>
-        <p className="mt-1 text-sm text-slate-600">Actualiza la informacion del candidato y guarda los cambios.</p>
+        <p className="mt-1 text-sm text-slate-600">Actualiza la información del candidato y guarda los cambios.</p>
       </header>
 
       <CandidateForm mode="edit" candidateId={candidateId} initialData={candidate} />

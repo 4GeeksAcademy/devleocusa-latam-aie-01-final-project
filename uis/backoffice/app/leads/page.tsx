@@ -1,6 +1,35 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LeadValidationPanel } from "../components/LeadValidationPanel";
+import { getCurrentUser } from "@/services/authApi";
 
 export default function LeadsPage() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getCurrentUser()
+      .then((user) => {
+        if (user.role === "manager") {
+          if (active) setAuthorized(true);
+        } else {
+          router.replace("/");
+        }
+      })
+      .catch(() => router.replace("/login"));
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  if (!authorized) {
+    return <p className="text-sm text-slate-600">Verificando permisos…</p>;
+  }
+
   return (
     <div className="space-y-6">
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

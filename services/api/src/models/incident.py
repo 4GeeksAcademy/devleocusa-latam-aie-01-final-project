@@ -82,20 +82,23 @@ class IncidentResponse(BaseModel):
 
 
 class IncidentListResponse(BaseModel):
-    """Lightweight incident payload for list views.
+    """Incident payload for list views.
 
-    Excludes ``description`` and ``updated_at`` to save bandwidth
-    on the frontend list view.
+    Includes ``description`` (rendered as the row subtitle) and
+    ``updated_at`` (shown in the "Actualizado" column). Both are already
+    part of the domain model, so exposing them costs no extra query.
     """
 
     id: str
     title: str
+    description: str
     category: IncidentCategory
     status: IncidentStatus
     origin: IncidentOrigin
     branch: IncidentBranch
     tenant_id: str
     created_at: datetime
+    updated_at: datetime
 
 
 class IncidentStatusResponse(BaseModel):

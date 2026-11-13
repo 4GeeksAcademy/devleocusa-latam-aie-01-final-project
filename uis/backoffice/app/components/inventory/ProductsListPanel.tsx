@@ -174,22 +174,7 @@ export function ProductsListPanel() {
             </p>
           </div>
 
-          <Link
-            href="/backoffice/inventory/orders/inbound"
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth={2}
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Registrar Entrada
-          </Link>
-        </div>
+          </div>
       </section>
 
       {/* ── Tarjetas de resumen ────────────────────────────────────── */}

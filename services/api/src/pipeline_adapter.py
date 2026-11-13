@@ -99,6 +99,11 @@ def arbitrate_conflicts(sections: list[dict[str, Any]], **kwargs: Any) -> dict[s
     return _approval_module().arbitrate_conflicts(sections, **kwargs)
 
 
+def validate_department_decision(decision: dict[str, Any]) -> dict[str, Any]:
+    """Validate an approval payload using the pipeline package's canonical rules."""
+    return _approval_module().validate_decision(decision)
+
+
 def build_async_department_approval_graph(**kwargs: Any) -> Any:
     """Deprecated: RFP approval currently uses the isolated sync PostgresSaver."""
     raise RuntimeError("Use department_approval_runtime() for the RFP approval graph.")
@@ -149,7 +154,7 @@ async def invoke_department_approval_async(graph: Any, **kwargs: Any) -> dict[st
 
 
 def proposal_helpers() -> tuple[Any, Any]:
-    """Return lazy-loaded Hito 9 generator/evaluator from the existing pipeline."""
+    """Return lazy-loaded RFP generator/evaluator from the existing pipeline."""
     pipeline_source = next(
         (ancestor / "data" / "pipelines" / "src" for ancestor in Path(__file__).resolve().parents
          if (ancestor / "data" / "pipelines" / "src" / "rfp_intake" / "proposal.py").is_file()),
@@ -160,4 +165,4 @@ def proposal_helpers() -> tuple[Any, Any]:
     if str(pipeline_source) not in sys.path:
         sys.path.insert(0, str(pipeline_source))
     module = importlib.import_module("rfp_intake.proposal")
-    return module.generate_hito9_section, module.evaluate_hito9_section
+    return module.generate_canonical_section, module.evaluate_canonical_section

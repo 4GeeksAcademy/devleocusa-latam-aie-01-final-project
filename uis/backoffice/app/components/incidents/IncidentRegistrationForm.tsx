@@ -12,6 +12,11 @@ import {
   createIncident,
   extractIncidentFieldErrors,
 } from "../../../services/incidentsApi";
+import {
+  getIncidentCategoryLabel,
+  getIncidentOriginLabel,
+  getIncidentStatusLabel,
+} from "../../../lib/incidentsMappings";
 
 type ToastKind = "success" | "error";
 
@@ -168,7 +173,7 @@ export function IncidentRegistrationForm({ onCreated, onNotify }: IncidentRegist
           >
             {categoryOptions.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {getIncidentCategoryLabel(option)}
               </option>
             ))}
           </select>
@@ -187,7 +192,7 @@ export function IncidentRegistrationForm({ onCreated, onNotify }: IncidentRegist
           >
             {statusOptions.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {getIncidentStatusLabel(option)}
               </option>
             ))}
           </select>
@@ -206,7 +211,7 @@ export function IncidentRegistrationForm({ onCreated, onNotify }: IncidentRegist
           >
             {originOptions.map((option) => (
               <option key={option} value={option}>
-                {option}
+                {getIncidentOriginLabel(option)}
               </option>
             ))}
           </select>

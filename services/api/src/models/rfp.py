@@ -57,14 +57,15 @@ class DepartmentKey(str, Enum):
     DIRECCION_EJECUTIVA = "direccion_ejecutiva"          # CEO
 
 
-# Canonical IDs and approvers for Hito 9. Legacy intake identifiers are retained
-# for already-created tickets and normalized at the Part 3 boundary.
-HITO9_DEPARTMENT_APPROVERS: dict[str, str] = {
+# Canonical IDs and approvers for the RFP proposal flow. Legacy intake
+# identifiers are retained for already-created tickets and normalized at the
+# Part 3 boundary.
+RFP_DEPARTMENT_APPROVERS: dict[str, str] = {
     "warehouse": "Ana Whitfield",
     "lastmile": "Carlos Vega",
     "reverse": "Sofía Ramos",
 }
-LEGACY_TO_HITO9_DEPARTMENT = {
+LEGACY_TO_CANONICAL_DEPARTMENT = {
     "operaciones_almacen": "warehouse",
     "ultima_milla_transportistas": "lastmile",
     "logistica_inversa": "reverse",
