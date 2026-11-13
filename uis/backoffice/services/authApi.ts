@@ -44,6 +44,7 @@ interface LoginResponse {
 export interface CurrentUser {
   email: string;
   role: string;
+  department?: string | null;
 }
 
 interface ApiErrorResponse {

@@ -141,6 +141,7 @@ def auth_token(test_user):
 def manager_user(fresh_db):
     """Create a TrackFlow manager for operator-only endpoint tests."""
     from src.database import get_users_table
+    from src.models.user import Department
     from src.services.user_service import create_user
 
     user = create_user(
@@ -148,6 +149,7 @@ def manager_user(fresh_db):
         password="Manager!2025",
         role="manager",
         tenant_id="test-tenant",
+        department=Department.COMMERCIAL,
         name="Manager User",
     )
     yield user, "Manager!2025"

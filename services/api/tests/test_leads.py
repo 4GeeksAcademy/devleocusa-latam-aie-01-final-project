@@ -112,11 +112,11 @@ def test_non_manager_cannot_access_lead_crm(clean_leads_db, auth_token) -> None:
     assert response.status_code == 403
 
 
-def test_admin_cannot_access_manager_only_lead_crm(clean_leads_db, test_admin_user) -> None:
+def test_admin_has_global_access_to_lead_crm(clean_leads_db, test_admin_user) -> None:
     from src.services.auth_service import create_access_token
 
     admin, _ = test_admin_user
     token = create_access_token(admin.id)
     response = _client().get("/leads", headers={"Authorization": f"Bearer {token}"})
 
-    assert response.status_code == 403
+    assert response.status_code == 200

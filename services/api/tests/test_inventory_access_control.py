@@ -9,7 +9,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from src.database import get_sql_session
 from src.models.models import PendingSKUExit, SKU, SKUEntry, SKUExit
-from src.models.user import User, UserRole
+from src.models.user import Department, User, UserRole
 from src.routes.inventory import inventory_router
 from src.services.auth_service import create_access_token, get_current_user
 
@@ -47,7 +47,7 @@ def test_inventory_write_rejects_regular_user(test_user):
     assert response.status_code == 403
 
 
-def test_regular_user_records_outbound_dispatch_immediately():
+def test_warehouse_employee_creates_pending_outbound_request():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -61,7 +61,13 @@ def test_regular_user_records_outbound_dispatch_immediately():
         session.add(SKUEntry(sku_id="sku-1", quantity=5, user_uuid="seed"))
         session.commit()
 
-    regular_user = User(id="regular-user", email="user@example.com", hashed_password="x", role=UserRole.USER)
+    regular_user = User(
+        id="regular-user",
+        email="user@example.com",
+        hashed_password="x",
+        role=UserRole.USER,
+        department=Department.WAREHOUSE_OPERATIONS,
+    )
     app = FastAPI()
     app.include_router(inventory_router)
 
@@ -74,22 +80,17 @@ def test_regular_user_records_outbound_dispatch_immediately():
     client = TestClient(app)
 
     response = client.post("/inventory/orders/outbound", json={"sku_id": "sku-1", "quantity": 3})
-    assert response.status_code == 201
-    exit_id = response.json()["id"]
-    assert response.json()["quantity"] == 3
+    assert response.status_code == 202
+    request_id = response.json()["request_id"]
+    assert response.json()["status"] == "pending"
 
     excessive_exit = client.post(
-        "/inventory/orders/outbound", json={"sku_id": "sku-1", "quantity": 3}
+        "/inventory/orders/outbound", json={"sku_id": "sku-1", "quantity": 6}
     )
     assert excessive_exit.status_code == 400
-    products = client.get("/inventory/products")
-    assert products.status_code == 200
-    assert products.json()[0]["current_stock"] == 2
-    assert products.json()[0]["available_stock"] == 2
     with Session(engine) as session:
-        stored_exit = session.get(SKUExit, exit_id)
-        assert stored_exit is not None
-        assert stored_exit.user_uuid == "regular-user"
-        assert stored_exit.quantity == 3
-        assert session.get(SKUEntry, 1) is None  # entries remain immutable
-        assert len(session.exec(select(SKUExit)).all()) == 1
+        stored_request = session.get(PendingSKUExit, request_id)
+        assert stored_request is not None
+        assert stored_request.requester_uuid == "regular-user"
+        assert stored_request.quantity == 3
+        assert session.exec(select(SKUExit)).all() == []
