@@ -1,8 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import { getCurrentUser } from "@/services/authApi";
 
 type NavItem = {
@@ -14,6 +14,7 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: "/", label: "Inicio" },
   { href: "/account/user", label: "Mi usuario" },
+  { href: "/admin/access", label: "Roles y departamentos" },
   { href: "/candidaturas", label: "Candidaturas" },
   { href: "/leads", label: "Prospectos" },
   { href: "/operaciones/inventario", label: "Inventario operativo" },
@@ -27,29 +28,31 @@ const navItems: NavItem[] = [
 
 export function SidebarNav() {
   const pathname = usePathname();
-  const [canManageLeads, setCanManageLeads] = useState<boolean | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [canAccessLeads, setCanAccessLeads] = useState(false);
 
   useEffect(() => {
     let active = true;
     getCurrentUser()
       .then((user) => {
         if (active) {
-          setCanManageLeads(user.role === "manager");
+          setIsAdmin(user.role === "admin");
+          setCanAccessLeads(
+            user.role === "admin" ||
+              ((user.role === "user" || user.role === "manager") &&
+                user.department === "Comercial y Relación con Clientes"),
+          );
         }
       })
-      .catch(() => {
-        if (active) {
-          setCanManageLeads(false);
-        }
-      });
-
+      .catch(() => undefined);
     return () => {
       active = false;
     };
   }, []);
 
   const visibleItems = navItems.filter((item) => {
-    if (item.href === "/leads") return canManageLeads === true;
+    if (item.href === "/admin/access") return isAdmin;
+    if (item.href === "/leads") return canAccessLeads;
     return true;
   });
 

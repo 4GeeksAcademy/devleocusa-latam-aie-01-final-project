@@ -22,8 +22,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from src.models.user import User
-from src.services.auth_service import get_current_user
+from src.models.user import Department, User, UserRole
+from src.services.access_control import require_access
 
 from . import models as reporting_models
 from . import store as reporting_store
@@ -50,6 +50,8 @@ router = APIRouter(
     prefix="/reporting",
     tags=["reporting"],
 )
+_executive_employee = require_access(UserRole.USER, Department.EXECUTIVE)
+_executive_supervisor = require_access(UserRole.MANAGER, Department.EXECUTIVE)
 
 _DESTINO_TABLAS = [
     "executive_kpis (TinyDB — services/reporting/data/reporting.json)",
@@ -138,7 +140,7 @@ def _extract_kpi(result: dict[str, Any]) -> dict[str, Any] | None:
     ),
 )
 def get_pipeline_status(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_executive_employee),
 ) -> reporting_models.PipelineStatusResponse:
     last_exec = reporting_store.get_last_execution()
 
@@ -186,7 +188,7 @@ def get_pipeline_status(
     ),
 )
 def trigger_pipeline(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_executive_supervisor),
 ) -> reporting_models.TriggerResponse:
     try:
         hora_inicio = time.time()
@@ -265,7 +267,7 @@ def get_kpis(
         le=1000,
         description="Cantidad maxima de registros a retornar (entre 1 y 1000).",
     ),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_executive_employee),
 ) -> reporting_models.KPIListResponse:
     records = reporting_store.get_all_kpi_records(
         fecha_reporte=fecha_reporte,

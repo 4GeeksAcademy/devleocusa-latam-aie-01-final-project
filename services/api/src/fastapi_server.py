@@ -24,6 +24,7 @@ from src.routes.profiles_router import profiles_router
 from src.routes.reports_router import router as reports_router
 from src.routes.suppliers_fastapi_router import suppliers_fastapi_router
 from src.routes.users_router import users_router
+from src.routes.access_admin_router import router as access_admin_router
 from src.telemetry import TelemetryMiddleware
 from telemetry.router import router as telemetry_router
 from reporting.router import router as reporting_router
@@ -94,6 +95,7 @@ app.add_middleware(TelemetryMiddleware)
 
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(access_admin_router)
 app.include_router(profiles_router)
 app.include_router(inventory_router)
 app.include_router(suppliers_fastapi_router)

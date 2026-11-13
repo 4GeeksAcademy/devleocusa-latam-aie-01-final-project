@@ -18,9 +18,14 @@ from src.models.supplier import (
     SupplierStatusUpdate,
 )
 from src.models.user import User
+from src.models.user import Department, UserRole
+from src.services.access_control import require_access
 from src.services.auth_service import get_current_user
 
 suppliers_fastapi_router = APIRouter(tags=["suppliers-legacy"])
+
+_carrier_employee = require_access(UserRole.USER, Department.LAST_MILE_CARRIERS)
+_carrier_supervisor = require_access(UserRole.MANAGER, Department.LAST_MILE_CARRIERS)
 
 
 def _now_iso() -> str:
@@ -52,7 +57,7 @@ def _get_supplier_document_by_id(raw_id: str) -> Document | None:
 @suppliers_fastapi_router.post("/suppliers", response_model=SupplierResponse)
 def create_supplier_route(
     payload: SupplierCreate,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_carrier_supervisor),
 ) -> SupplierResponse:
     suppliers_table = get_suppliers_table()
     supplier_data = payload.model_dump(mode="json")
@@ -77,7 +82,7 @@ def create_supplier_route(
 def list_suppliers_route(
     pais: SupplierCountry | None = None,
     categoria: SupplierCategory | None = None,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_carrier_employee),
 ) -> list[SupplierResponse]:
     # Cache key includes filter params — each filter combination is a separate entry
     cache_key = f"list:pais={pais}:categoria={categoria}"
@@ -106,7 +111,7 @@ def list_suppliers_route(
 @suppliers_fastapi_router.get("/suppliers/{supplier_id}", response_model=SupplierResponse)
 def get_supplier_by_id_route(
     supplier_id: str,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_carrier_employee),
 ) -> SupplierResponse:
     cached = supplier_cache.get(supplier_id)
     if cached is not None:
@@ -125,7 +130,7 @@ def get_supplier_by_id_route(
 def update_supplier_rate_route(
     supplier_id: str,
     payload: SupplierRateUpdate,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_carrier_supervisor),
 ) -> SupplierResponse:
     document = _get_supplier_document_by_id(supplier_id)
     if document is None:
@@ -155,7 +160,7 @@ def update_supplier_rate_route(
 def update_supplier_status_route(
     supplier_id: str,
     payload: SupplierStatusUpdate,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_carrier_supervisor),
 ) -> SupplierResponse:
     document = _get_supplier_document_by_id(supplier_id)
     if document is None:
@@ -184,7 +189,7 @@ def update_supplier_status_route(
 @suppliers_fastapi_router.delete("/suppliers/{supplier_id}")
 def delete_supplier_route(
     supplier_id: str,
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_carrier_supervisor),
 ) -> dict[str, str]:
     document = _get_supplier_document_by_id(supplier_id)
     if document is None:

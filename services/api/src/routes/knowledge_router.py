@@ -18,10 +18,13 @@ from pydantic import BaseModel, Field, field_validator
 from src.agent.invocation import invoke_agent
 from src.agent.guardrails import summarize_guardrail_events
 from src.models.user import User
+from src.models.user import Department, UserRole
+from src.services.access_control import require_access
 from src.services.access_control import require_internal_operator
 
 knowledge_router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 logger = logging.getLogger(__name__)
+_cx_employee = require_access(UserRole.USER, Department.CUSTOMER_EXPERIENCE)
 
 
 # ── Request / Response schemas ─────────────────────────────────────────
@@ -65,7 +68,7 @@ class GuardrailSummaryResponse(BaseModel):
 
 async def enforce_knowledge_rate_limit(
     request: Request,
-    current_user: User = Depends(require_internal_operator),
+    current_user: User = Depends(_cx_employee),
 ) -> None:
     """Apply a shared, authenticated-user limit before any model/tool call."""
     limiter = getattr(request.app.state, "agent_rate_limiter", None)
@@ -99,7 +102,7 @@ async def enforce_knowledge_rate_limit(
 async def knowledge_query(
     payload: KnowledgeQueryRequest,
     request: Request,
-    _current_user: User = Depends(require_internal_operator),
+    _current_user: User = Depends(_cx_employee),
     _rate_limit: None = Depends(enforce_knowledge_rate_limit),
 ) -> KnowledgeQueryResponse:
     """POST /knowledge/query — Query the TrackFlow knowledge base.
@@ -138,7 +141,7 @@ async def knowledge_query(
 async def guardrails_summary(
     since: datetime | None = Query(default=None),
     until: datetime | None = Query(default=None),
-    _current_user: User = Depends(require_internal_operator),
+    _current_user: User = Depends(_cx_employee),
 ) -> GuardrailSummaryResponse:
     for bound in (since, until):
         if bound is not None and bound.utcoffset() is None:

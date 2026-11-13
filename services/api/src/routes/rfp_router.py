@@ -24,13 +24,16 @@ from sqlmodel import Session
 
 from src.database import get_sql_session
 from src.models.rfp import DepartmentSection, RFPFinalDocument, RFPTicket, RFPStatus
-from src.models.user import User
-from src.services.auth_service import get_current_user
+from src.models.user import Department, User, UserRole
+from src.services.access_control import require_access, require_roles
 from src.services import rfp_service
 from src.services.rfp_event_service import rfp_event_broker
 
 rfp_router = APIRouter(prefix="/rfp", tags=["rfp"])
 logger = logging.getLogger(__name__)
+_commercial_employee = require_access(UserRole.USER, Department.COMMERCIAL)
+_commercial_supervisor = require_access(UserRole.MANAGER, Department.COMMERCIAL)
+_admin_only = require_roles({UserRole.ADMIN})
 
 _ALLOWED_CONTENT_TYPES = {"application/pdf", "application/x-pdf", "application/octet-stream"}
 
@@ -192,7 +195,7 @@ def _detail(
 
 @rfp_router.get("/events", summary="Notificaciones en tiempo real de RFP")
 async def rfp_events(
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_commercial_employee),
 ) -> StreamingResponse:
     """Stream classified RFP tickets; clients recover missed items from Supabase."""
     async def event_stream():
@@ -244,6 +247,7 @@ async def upload_rfp(
     background_tasks: BackgroundTasks,
     file: UploadFile = None,  # type: ignore[assignment]
     db: Session = Depends(get_sql_session),
+    _current_user: User = Depends(_commercial_supervisor),
 ) -> JSONResponse:
     if file is None:
         raise HTTPException(status_code=400, detail={"error": "Falta el archivo PDF."})
@@ -296,6 +300,7 @@ async def upload_rfp(
 def list_rfp_tickets(
     status: str | None = None,
     db: Session = Depends(get_sql_session),
+    _current_user: User = Depends(_commercial_employee),
 ) -> list[RFPTicketSummary]:
     if status is not None:
         valid = {s.value for s in RFPStatus}
@@ -319,6 +324,7 @@ def list_rfp_tickets(
 def get_rfp_ticket(
     ticket_id: str,
     db: Session = Depends(get_sql_session),
+    _current_user: User = Depends(_commercial_employee),
 ) -> RFPTicketDetail:
     bundle = rfp_service.get_ticket_bundle(db, ticket_id)
     if bundle is None:
@@ -333,7 +339,7 @@ def submit_rfp_department_decision(
     department_id: str,
     payload: RFPDecisionIn,
     session: Session = Depends(get_sql_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_commercial_supervisor),
 ) -> dict[str, Any]:
     """Resume one department's durable graph; ownership is checked server-side."""
     try:
@@ -369,7 +375,7 @@ def submit_rfp_department_decision(
 def get_rfp_final_document(
     ticket_id: str,
     session: Session = Depends(get_sql_session),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_admin_only),
 ) -> dict[str, Any]:
     ticket = session.get(RFPTicket, ticket_id)
     if ticket is None:

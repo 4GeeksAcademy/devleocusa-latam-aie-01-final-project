@@ -1,97 +1,143 @@
-# BRIEFING — TrackFlow: Hito 9, Flujos de Trabajo Agénticos (Partes 1, 2 y 3)
+# Bienvenido a TrackFlow
 
-> Este documento es válido para las tres partes del Hito 9. Léelo completo antes de empezar la Parte 1 — las Partes 2 y 3 reutilizan los mismos departamentos, formato de RFP y lineamientos definidos aquí.
+## AI Engineering · 4Geeks Academy — Briefing de la Empresa
 
-## 1. Introducción
+---
 
-En TrackFlow, las RFPs llegan al equipo de **Miguel Torres, Commercial Director**: marcas de e-commerce (moda, electrónica, cosmética) que quieren tercerizar su logística — almacenamiento, última milla, devoluciones, o una combinación — en Estados Unidos, España, o ambos. Hoy, cada account manager arma la propuesta a mano, coordinando por correo con Warehouse, Last Mile y Reverse Logistics; el proceso es lento y a veces una propuesta llega después de que el prospecto ya firmó con otro proveedor.
+TrackFlow es una empresa de entrega de última milla y gestión de almacenes fundada en 2009 en Los Ángeles, Estados Unidos. Opera en dos mercados — Estados Unidos y España — con almacenes en Los Ángeles y Zaragoza. La empresa cuenta con aproximadamente 130 empleados y genera alrededor de 9 millones de euros de facturación anual.
 
-## 2. Departamentos y estructuras de datos
+TrackFlow existe porque las marcas de e-commerce son buenas fabricando y vendiendo productos, pero no llevándolos hasta la puerta del cliente. TrackFlow lo hace por ellas: almacena su inventario, prepara y empaqueta los pedidos, los envía a través de una red de transportistas y gestiona las devoluciones cuando los productos vuelven. Para las marcas que trabajan con TrackFlow, toda la operación logística — desde que se hace un pedido hasta que se entrega o se devuelve — es un problema que resuelve TrackFlow.
 
-### 2.1 Departamentos que participan en la propuesta
+## Cómo está organizada la empresa
 
-Usa exactamente estos identificadores de departamento:
+TrackFlow está dirigida por **Thomas Harry**, fundador y CEO, con base en Los Ángeles. La empresa tiene una oficina tecnológica en Zaragoza, España, donde están el CTO Andrés Kim y la mayor parte del equipo técnico. Los equipos de operaciones, comercial y atención al cliente están repartidos entre los dos países.
 
-| `department_id` | Departamento                     | Responsable   | Qué aporta a la propuesta                                                   |
-| --------------- | -------------------------------- | ------------- | --------------------------------------------------------------------------- |
-| `warehouse`     | Warehouse Operations             | Ana Whitfield | Capacidad de almacenamiento, costo por pallet/SKU, tiempo de onboarding     |
-| `lastmile`      | Last Mile and Carrier Management | Carlos Vega   | Costo por envío, transportistas disponibles según destino, SLA de entrega   |
-| `reverse`       | Reverse Logistics                | Sofía Ramos   | Costo y tiempo de procesamiento de devoluciones (si el cliente lo solicita) |
+La empresa se organiza en las siguientes áreas:
 
-No toda RFP necesita a los tres departamentos: un cliente puede pedir solo almacenamiento y devoluciones, sin última milla (porque usa su propio transportista), por ejemplo. Tu clasificador/orquestador debe decidir qué departamentos aplican según el alcance solicitado.
+**Operaciones de Almacén** es donde ocurre el trabajo físico de la logística. Ana Whitfield supervisa los dos almacenes — uno en Los Ángeles y otro en Zaragoza — y a los aproximadamente 70 operarios que los gestionan. Cada día llegan cientos de pedidos que se recogen de las estanterías, se empaquetan y se entregan a los transportistas. Hoy los dos almacenes funcionan con sistemas distintos y no comparten una visión común del inventario.
 
-### 2.2 Formato de una RFP real
+**Última Milla y Gestión de Transportistas** gestiona la relación con los 8 transportistas con los que TrackFlow trabaja en los dos países — entre ellos UPS, FedEx, MRW y SEUR. Carlos Vega coordina qué transportista se encarga de cada envío, hace seguimiento de las entregas y gestiona las incidencias que inevitablemente ocurren: paquetes perdidos, entregas fallidas, direcciones incorrectas. Hoy la mayor parte de este trabajo se hace manualmente, transportista por transportista.
 
-Las RFPs llegan como PDF e incluyen normalmente: nombre y país de origen del cliente (EE. UU. o España — define la moneda), servicios solicitados (warehousing, last mile, reverse logistics), volumen estimado (pedidos/mes), fecha límite, y a veces un presupuesto de referencia.
+**Logística Inversa** gestiona lo que ocurre cuando un producto vuelve. Sofía Ramos lidera este equipo de cinco personas. Las devoluciones representan entre el 18% y el 25% del volumen total según el cliente y el país, y cada devolución implica una cadena de decisiones — aprobar o rechazar, recoger o no, reacondicionar o desechar — que hoy pasan todas por revisión humana.
 
-### 2.3 Entidades sugeridas para tu estado
+**Experiencia del Cliente** es la primera línea entre TrackFlow y las personas a las que sirve. Valentina Cruz dirige a 15 agentes en Los Ángeles y Zaragoza que atienden consultas tanto de las marcas (que quieren saber cómo va su operación) como de los consumidores finales (que quieren saber dónde está su paquete). La gran mayoría de las consultas son repetitivas, y hoy cada una de ellas la responde una persona.
 
-Persiste **Ticket**, **metadatos RFP** y **DepartmentSection** (al menos `key_aspects` en la Parte 1; borradores/evals/aprobaciones en partes posteriores) en **PostgreSQL (Supabase)** vía tu capa SQLModel/DB existente. TinyDB o archivos JSON no son la fuente de verdad de estas entidades.
+**Comercial y Relación con Clientes** gestiona la cartera de marcas cliente de TrackFlow. Miguel Torres lidera a los account managers y al equipo de desarrollo de negocio, responsables de retener a los clientes actuales y conseguir otros nuevos. Los contratos son anuales, y las renovaciones se ganan o se pierden según si el cliente siente que su operación logística funciona bien.
 
-- **Ticket**: `ticket_id`, `rfp_id`, `status`, `raw_pdf_path`, `created_at`, `updated_at`
-- **RFP metadata**: `client_name`, `client_country`, `services_requested`, `monthly_volume`, `deadline`, `budget_range`, `departments_needed`, métricas de legibilidad
-- **DepartmentSection**: `department_id`, `key_aspects`, `draft_content`, `evaluation_results`, `approval_status`, `approver`, `approved_at`
-- **FinalDocument**: `ticket_id`, `sections`, `currency`, `generated_at`
+**Personas** cuida de quienes hacen funcionar TrackFlow. Rafael Sanz lidera un equipo de tres personas desde Zaragoza y se ocupa de la contratación, la incorporación, las políticas internas y las consultas del personal en los dos países, bajo dos marcos laborales distintos. Cada nueva incorporación al equipo corporativo — Tecnología, Comercial, Experiencia del Cliente o la gestión de operaciones — necesita entender cómo funciona realmente un negocio logístico en dos países antes de poder hacer bien su trabajo, y hoy ese aprendizaje se deja al azar.
 
-**Estado del ticket por parte** (mismo ticket en Partes 1–3):
+**Tecnología** es el equipo que construye y mantiene todo. Andrés Kim lidera desde Zaragoza un equipo de desarrolladores, ingenieros de datos y técnicos de sistemas. La arquitectura actual es un mosaico: dos sistemas de almacén distintos, un ERP de principios de la década de 2010 e integraciones entre ellos construidas deprisa y nunca documentadas. Cuando algo falla, el equipo se entera por un WhatsApp de alguien de operaciones.
 
-| Estado                 | Parte | Cuándo                                              |
-| ---------------------- | ----- | --------------------------------------------------- |
-| `analizando`           | 1     | Subida aceptada; pipeline en curso                  |
-| `descartado`           | 1     | El clasificador rechazó el documento                |
-| `analisis_completo`    | 1     | Synthesizer listo; Ventas puede leer aspectos clave |
-| `generando_borrador`   | 2     | Generadores escribiendo secciones                   |
-| `en_evaluación`        | 2     | Evaluadores en paralelo / ciclo generador-evaluador |
-| `needs_human_review`   | 2     | Límite de iteraciones agotado; último borrador + EvaluationResult pasan a Parte 3 |
-| `esperando_aprobación` | 3     | Pausa humana por departamento                       |
-| `terminado`            | 3     | Documento final generado                            |
+**Dirección Ejecutiva** recae en Thomas, que gestiona el negocio desde Los Ángeles con un informe semanal consolidado que cada director prepara manualmente — un proceso que consume horas cada domingo por la noche y que aun así entrega datos que ya tienen uno o dos días de antigüedad.
 
-Los workers reciben **metadatos compartidos + extractos relevantes a su departamento**. Ejemplo: `warehouse` recibe slices/metadatos de warehousing — si falta el volumen mensual, registra una pregunta abierta; **nunca inventes** pallets/SKU/pedidos que no estén en la RFP.
+## Dónde está la empresa hoy
 
-### 2.4 Layout del monorepo
+TrackFlow tiene buenos clientes, un equipo de operaciones capacitado y una propuesta de valor clara. Lo que le falta es la infraestructura para gestionar a escala un negocio logístico en dos países. Los dos almacenes no pueden ver el inventario del otro. Los datos de rendimiento de los transportistas no existen de forma estructurada. Las devoluciones se aprueban o se rechazan una a una. Las consultas de los clientes se responden consultando un documento de Word en Google Drive. El CEO toma decisiones con un informe montado a mano.
 
-- **HTTP**: extiende el **backend existente** bajo `services/` — sin un proceso API nuevo.
-- **Pipeline / grafo**: `data/pipelines/rfp_intake/` (grafo dedicado; no lo mezcles con el grafo CX). Los routers importan y disparan; no poseen la lógica de agentes.
-- **CLIs sueltos**: `scripts/` si hace falta.
-- **PDFs subidos**: vía `uis/backoffice`; se guardan bajo `data/raw/` como artefacto runtime de la recepción.
+La consecuencia es que TrackFlow es más lenta, comete más errores y es menos rentable de lo que debería — y la distancia crece a medida que la competencia invierte en automatización.
 
-## 3. Métricas de negocio y KPIs
+Thomas ha creado una unidad interna llamada **TrackFlow Tech** con un mandato claro: construir los sistemas, las integraciones y las automatizaciones inteligentes que permitan a TrackFlow funcionar como la empresa logística moderna que necesita ser.
 
-- **Tiempo de armado de propuesta**: hoy varios días de coordinación manual → meta: menos de 2 días desde la carga de la RFP hasta el documento final.
-- **Tasa de clasificación correcta** de RFPs vs. documentos que no lo son.
-- **Iteraciones promedio por sección** en el ciclo generador-evaluador (ideal: menos de 2).
-- **Tiempo de aprobación por departamento** desde que la sección está lista hasta la decisión del responsable.
+**Tú formas parte de esa unidad.**
 
-## 4. Instrucciones de datos semilla
+---
 
-Usa los PDF listos en [`rfp-requests/trackflow/`](./rfp-requests/trackflow/) como **subidas de prueba a través de la UI**. El proceso de recepción guarda cada PDF subido bajo `data/raw/` (no trates los PDF del currículo como inventario pre-sembrado en el repo). Las RFP formales e informales deben **aceptarse y procesarse**; el documento inválido debe **rechazarse**.
+---
 
-1. **`trackflow-request-1.pdf` — RFP formal (aceptar):** _ModaViva_ (España), solo almacenamiento + devoluciones (transportista propio para última milla). Activa `warehouse` y `reverse`, no `lastmile`. Moneda: EUR.
-2. **`trackflow-request-2.pdf` — RFP informal (aceptar):** correo de _Luna Cosmetics_ (LA) pidiendo almacenamiento + última milla EE. UU., ~5.000 pedidos/mes. Activa `warehouse` y `lastmile`. Moneda: USD.
-3. **`trackflow-request-3.pdf` — inválido (rechazar):** pitch entrante de tarifas de transportista — no es RFP de cliente. El clasificador debe descartarlo.
+## Los Departamentos y sus Problemas
 
-## 5. Restricciones de negocio (lineamientos para el evaluador de cumplimiento)
+### 🚚 Operaciones de Almacén
 
-- El precio se cotiza en USD para operación en Estados Unidos y en EUR para operación en España — se determina a partir del campo `client_country`.
-- Toda propuesta debe indicar el SLA de entrega a tiempo (%) que TrackFlow se compromete a cumplir.
-- Ninguna propuesta puede prometer procesamiento de devoluciones en menos de 48 horas.
-- Toda propuesta debe incluir una tabla de descuentos por volumen.
-- Ninguna propuesta puede revelar tarifas negociadas con transportistas específicos — solo el costo final ofrecido al cliente.
+**Responsable:** Ana Whitfield (~70 operarios + 2 jefes de almacén)
 
-## 6. Entregables esperados
+Los Ángeles y Zaragoza utilizan cada uno un sistema de gestión de almacén distinto — uno es software comercial y el otro una hoja de cálculo avanzada. No existe visibilidad del inventario en tiempo real a nivel global. Los pedidos entrantes llegan por correo en formatos distintos y se transcriben a mano. El picking se hace con listas impresas en papel. Las discrepancias de inventario son frecuentes y se detectan tarde.
 
-- **Parte 1:** el ticket identifica correctamente si un documento es una RFP de TrackFlow, extrae metadatos (incluido el país del cliente) y reparte el análisis solo entre los departamentos que el alcance solicitado realmente requiere.
-- **Parte 2:** cada departamento activo genera su sección y pasa por evaluación de legibilidad, pertinencia y cumplimiento de los lineamientos de la sección 5 (incluida la moneda correcta y el SLA).
-- **Parte 3:** el responsable nombrado de cada departamento activo (§2.1) aprueba su sección de forma independiente, sin bloquear a los demás, y el documento final se genera solo cuando todas las secciones activas están aprobadas. **No** inventes una escalera jerárquica multi-nivel — TrackFlow solo tiene responsables pares por departamento.
+**Lo que necesitan:** Una API de inventario unificada que devuelva el stock en tiempo real de cualquier SKU en cualquiera de los dos almacenes, un pipeline de ingesta de pedidos que interprete los correos automáticamente, un dashboard de operaciones de almacén y alertas de stock bajo que avisen a los clientes y al equipo de compras.
 
-## 7. Parte 3 — Triggers de conflicto y árbitro fijo
+---
 
-El arbitraje debe ser un nodo dedicado del grafo disparado por **contradicciones detectables en estado estructurado**, no por agentes negociando entre ellos.
+### 📦 Última Milla y Gestión de Transportistas
 
-| Id del trigger       | Cuándo dispara                                                                                                                         | Árbitro fijo (no un LLM)                                                            | Regla de resolución                                                                                               |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `volume-vs-capacity` | La capacidad comprometida de `warehouse` (pallets/SKU o throughput de onboarding) no soporta el volumen mensual asumido por `lastmile` | Miguel Torres (Director Comercial)                                                  | Limitar el volumen de la propuesta a la capacidad de warehouse; `lastmile` debe revisar volumen/costo a la baja   |
-| `returns-sla-breach` | `reverse` (u otra sección) promete turnaround de devoluciones bajo 48 horas (viola §5)                                                 | Sofía Ramos rechaza su sección; si otro depto aún embebe esa promesa, Miguel Torres | Forzar `request_changes` en toda sección que diga devoluciones en menos de 48h; sin documento final hasta cumplir |
-| `currency-mismatch`  | Dos secciones activas cotizan monedas distintas, o la moneda ≠ mapeo de `client_country` (US→USD, Spain→EUR)                           | Miguel Torres                                                                       | Reescribir las secciones ofensoras a la moneda del país; rechazar si no se resuelve tras el límite de iteraciones |
+**Responsable:** Carlos Vega (6 coordinadores logísticos)
 
-Conecta estos ids de trigger a tu nodo de arbitraje. Los agentes pueden **señalar** un conflicto; no deben **resolverlo** por consenso libre.
+TrackFlow trabaja con 8 transportistas en los dos países (UPS, FedEx y DHL en Estados Unidos; MRW, SEUR y DHL en España, además de dos transportistas locales). La asignación de transportista es manual. El seguimiento de paquetes obliga a consultar uno por uno los portales de cada transportista. No hay datos históricos de rendimiento: ni tasa de entrega a tiempo, ni incidencias por ruta, ni coste por kilo.
+
+**Lo que necesitan:** Un motor de selección de transportista que recomiende el óptimo según destino, peso y urgencia; un endpoint de seguimiento unificado que agregue el estado de cualquier transportista; un portal público de seguimiento para los destinatarios; y un dashboard de rendimiento de transportistas.
+
+---
+
+### 🔄 Logística Inversa
+
+**Responsable:** Sofía Ramos (equipo de 5 personas)
+
+Las devoluciones representan entre el 18% y el 25% del volumen según el cliente y el país. Cada devolución pasa por revisión manual — no hay criterios de aprobación automática. La inspección del producto devuelto es subjetiva e inconsistente. No hay visibilidad sobre qué productos se devuelven más ni por qué.
+
+**Lo que necesitan:** Un motor de aprobación automática de devoluciones con reglas configurables por cliente, un flujo de recogida automatizado (aprobación → etiqueta → programación con el transportista), un sistema de inspección asistida por IA en el que el operario fotografía el producto y la IA clasifica su estado, y un dashboard de devoluciones con análisis de patrones.
+
+---
+
+### 📞 Experiencia del Cliente
+
+**Responsable:** Valentina Cruz (15 agentes en Los Ángeles y Zaragoza)
+
+TrackFlow atiende a dos tipos de cliente: las marcas (B2B) y los consumidores finales (B2C). Los 15 agentes atienden a ambos por correo, WhatsApp y teléfono, sin un sistema de tickets unificado. El 80% de las consultas podría responderse automáticamente. No existe una base de conocimiento. La cobertura fuera del horario de oficina es nula.
+
+**Lo que necesitan:** Un agente de primera línea que resuelva automáticamente las consultas de seguimiento y de estado de devoluciones, una base de conocimiento semántica indexada para RAG, un sistema de tickets unificado, un dashboard de Experiencia del Cliente en tiempo real y análisis de sentimiento para detectar clientes frustrados antes de que escalen. El soporte multilingüe (español + inglés) es opcional pero muy recomendable, empezando por un idioma base.
+
+---
+
+### 🤝 Comercial y Relación con Clientes
+
+**Responsable:** Miguel Torres (4 account managers + 4 de desarrollo de negocio)
+
+Los account managers siguen sus cuentas en hojas de cálculo personales y cadenas de correo — no hay CRM. Los informes a clientes son manuales: cada mes, un account manager reúne datos de distintos sistemas para enviar un PDF a cada cliente. No hay visibilidad sobre qué clientes corren riesgo de no renovar.
+
+**Lo que necesitan:** Una integración con un CRM con perfiles de cliente unificados, informes PDF para clientes generados automáticamente por un agente, un dashboard de salud de clientes con puntuación de riesgo de renovación, alertas de renovación a 90 y 30 días, y un agente comercial que sugiera servicios relevantes a los prospectos.
+
+---
+
+### 🧑‍🤝‍🧑 Personas
+
+**Responsable:** Rafael Sanz (equipo de 3 personas en Zaragoza)
+
+La contratación y la incorporación del equipo corporativo se gestionan por correo, con un PDF de bienvenida distinto en cada país. Cada responsable explica a su manera cómo opera la empresa, y nadie comprueba si la nueva persona entiende de verdad los procesos de almacén, transportistas y devoluciones sobre los que funciona el negocio. Los accesos a los sistemas internos tardan días porque dependen de que alguien se acuerde de pedirlos. Las consultas del personal sobre vacaciones, políticas y beneficios llegan por correo y por chat, y se responden de forma distinta según quién conteste. No hay indicadores de Personas — plantilla, rotación, tiempo de contratación — por país, y el equipo gestiona dos marcos laborales muy distintos (Estados Unidos y España) sin ningún sistema.
+
+**Lo que necesitan:** Un flujo de incorporación estructurado para el equipo corporativo que cubra la empresa, su operación, el puesto, la forma de trabajar y los lineamientos internos — con comprobaciones de comprensión y seguimiento del progreso; solicitudes de acceso a sistemas automatizadas; un portal interno de RR. HH. para vacaciones y consulta de políticas; un dashboard de indicadores de Personas por país; y un agente interno de RR. HH. que responda preguntas sobre políticas a partir de la documentación oficial. El soporte multilingüe (español + inglés) es opcional pero muy recomendable, empezando por un idioma base.
+
+---
+
+### 💻 Tecnología
+
+**CTO:** Andrés Kim (equipo de 7 personas en Zaragoza)
+
+La arquitectura técnica de TrackFlow es el resultado de años de crecimiento sin planificar: dos sistemas de gestión de almacén distintos, un ERP heredado de principios de la década de 2010, scripts de Python punto a punto sin documentar y bases de datos en dos proveedores cloud diferentes. No hay telemetría centralizada. Cuando un endpoint falla en Los Ángeles, el equipo de Zaragoza se entera por WhatsApp. Desplegar una funcionalidad nueva lleva entre una y dos semanas.
+
+**Lo que necesitan:** Telemetría y logging centralizados de los dos países, un pipeline de datos que alimente todos los dashboards de la empresa, monitorización en tiempo real con alertas automáticas, un agente de documentación técnica y tareas de operaciones automatizadas (backups, health checks, notificaciones de incidencias).
+
+---
+
+### 📊 Dirección Ejecutiva
+
+**CEO:** Thomas Espinoza
+
+Thomas recibe cada lunes un informe consolidado que sus directores preparan el domingo por la noche — de 3 a 4 horas de trabajo por director. A las 10 de la mañana del lunes, parte de los datos ya tiene dos días de antigüedad. No hay una visión unificada del negocio por país. Las decisiones estratégicas se toman con datos parciales.
+
+**Lo que necesita:** Un dashboard ejecutivo global con KPIs en tiempo real de las dos operaciones (volumen de envíos, entregas a tiempo, costes, devoluciones, CSAT), un informe semanal generado automáticamente cada lunes a las 7:00, vistas comparativas por país, alertas por umbral y un asistente de IA en lenguaje natural.
+
+--
+
+## ¿Por qué elegir TrackFlow?
+
+Elige TrackFlow si te atraen:
+
+- **La logística y las operaciones físicas** — cada línea de código que escribas está conectada a un paquete que viaja desde la estantería de un almacén hasta la puerta de alguien.
+- **La complejidad transfronteriza** — dos países, dos idiomas, dos entornos regulatorios y dos stacks tecnológicos separados que hay que unificar.
+- **La ingeniería de datos en su forma más concreta** — las métricas de rendimiento de transportistas, el inventario a nivel de SKU, los flujos de eventos de envíos y la clasificación de devoluciones son datos estructurados, medibles y muy visuales en un dashboard.
+- **Los sistemas que funcionan 24/7** — los clientes de TrackFlow no dejan de esperar sus paquetes a partir de las seis de la tarde. El agente de atención, el portal de seguimiento y el dashboard de operaciones tienen que estar siempre disponibles.
+
+Los retos de IA en TrackFlow incluyen la clasificación del estado de productos devueltos a partir de imágenes, la búsqueda semántica sobre políticas logísticas en dos idiomas, la selección inteligente de transportistas con recomendaciones explicables y un agregador de seguimiento de paquetes en tiempo real que consulta las APIs de 8 transportistas distintos. Si quieres construir sistemas que gestionen a escala la complejidad del mundo físico, TrackFlow es tu empresa.
+
+---
+
+_Documento interno — 4Geeks Academy · AI Engineering Track_
+_Para uso exclusivo en la generación de proyectos del programa_

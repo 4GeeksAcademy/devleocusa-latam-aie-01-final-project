@@ -8,8 +8,8 @@ from typing import Any
 from tinydb import Query
 from tinydb.table import Document
 
-from src.database import get_profiles_table, get_users_table
-from src.models.user import TinyDBId, User, UserRole
+from src.database import get_departments_table, get_profiles_table, get_users_table
+from src.models.user import Department, TinyDBId, User, UserRole
 from src.services.profile_service import create_profile_for_user
 from src.services.security import hash_password
 
@@ -48,6 +48,7 @@ def create_user(
     phone: str | None = None,
     address: str | None = None,
     tenant_id: str | None = None,
+    department: Department | str | None = None,
 ) -> User:
     """Create a user in TinyDB with hashed password and optional linked profile."""
 
@@ -64,6 +65,7 @@ def create_user(
         "hashed_password": hash_password(password),
         "is_active": is_active,
         "role": resolved_role.value,
+        "department": department.value if isinstance(department, Department) else department,
         "tenant_id": tenant_id,
         "created_at": _now_iso(),
     }
@@ -117,6 +119,26 @@ def list_users() -> list[User]:
     return [_serialize_user(document) for document in documents]
 
 
+def list_departments() -> list[dict[str, Any]]:
+    """Return active departments from the independent registry."""
+    return [dict(item) for item in get_departments_table().all()]
+
+
+def seed_departments() -> list[dict[str, Any]]:
+    """Idempotently seed TrackFlow's canonical departments."""
+    table = get_departments_table()
+    existing = {str(item.get("id")) for item in table.all()}
+    result: list[dict[str, Any]] = []
+    for department in Department:
+        record = {"id": department.value, "name": department.value, "is_active": True}
+        if department.value not in existing:
+            table.insert(record)
+        saved = table.get(Query().id == department.value)
+        if saved is not None:
+            result.append(dict(saved))
+    return result
+
+
 def update_user(user_id: TinyDBId, updates: dict[str, Any]) -> User | None:
     """Update mutable user fields and return updated record."""
 
@@ -124,7 +146,7 @@ def update_user(user_id: TinyDBId, updates: dict[str, Any]) -> User | None:
     if document is None:
         return None
 
-    mutable_fields = {"email", "is_active", "role", "password", "tenant_id"}
+    mutable_fields = {"email", "is_active", "role", "password", "tenant_id", "department"}
     safe_updates = {key: value for key, value in updates.items() if key in mutable_fields}
 
     if "password" in safe_updates:
@@ -133,6 +155,10 @@ def update_user(user_id: TinyDBId, updates: dict[str, Any]) -> User | None:
     if "role" in safe_updates:
         role_value = safe_updates["role"]
         safe_updates["role"] = UserRole(role_value).value
+
+    if "department" in safe_updates and safe_updates["department"] is not None:
+        department_value = safe_updates["department"]
+        safe_updates["department"] = Department(department_value).value
 
     if "email" in safe_updates:
         users_table = get_users_table()

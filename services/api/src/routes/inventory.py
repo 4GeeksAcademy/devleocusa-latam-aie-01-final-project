@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
 from src.cache import inventory_products_cache, inventory_product_cache
 from src.database import get_sql_session
-from src.models.models import SKU, SKUEntry, SKUExit
+from src.models.models import PendingSKUExit, SKU, SKUEntry, SKUExit
 from src.models.schemas import (
     SKUCreate,
     SKUEntryRead,
@@ -17,17 +19,15 @@ from src.models.schemas import (
     SKUExitResponse,
     SKURead,
 )
-from src.models.user import User, UserRole
-from src.services.auth_service import get_current_user
+from src.models.user import Department, User, UserRole
+from src.services.access_control import require_access
 from src.telemetry import emit_event
 
 inventory_router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 
-def _require_inventory_writer(user: User) -> User:
-    if user.role not in {UserRole.ADMIN, UserRole.MANAGER}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
-    return user
+_warehouse_employee = require_access(UserRole.USER, Department.WAREHOUSE_OPERATIONS)
+_warehouse_supervisor = require_access(UserRole.MANAGER, Department.WAREHOUSE_OPERATIONS)
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────
@@ -128,13 +128,18 @@ class _OutboundRequest(BaseModel):
     quantity: int = Field(ge=1)
 
 
+class _OutboundDecision(BaseModel):
+    decision: str = Field(pattern="^(approve|reject)$")
+    comment: str = Field(default="", max_length=1000)
+
+
 # ── GET /inventory/products ──────────────────────────────────────────
 
 
 @inventory_router.get("/products", response_model=list[SKURead])
 def list_products(
     db: Session = Depends(get_sql_session),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_warehouse_employee),
 ) -> list[SKURead]:
     """List all SKUs with their dynamically computed ``current_stock``."""
     cached = inventory_products_cache.get("all")
@@ -158,10 +163,9 @@ def list_products(
 def create_product(
     payload: SKUCreate,
     db: Session = Depends(get_sql_session),
-    current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_warehouse_supervisor),
 ) -> SKURead:
     """Create a new SKU product (initial stock is implicitly zero)."""
-    _require_inventory_writer(current_user)
     sku = SKU(
         name=payload.name,
         sku_code=payload.sku_code,
@@ -184,7 +188,7 @@ def create_product(
 def get_product(
     sku_id: str,
     db: Session = Depends(get_sql_session),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_warehouse_employee),
 ) -> SKURead:
     """Get a specific SKU with its computed ``current_stock``."""
     cached = inventory_product_cache.get(sku_id)
@@ -213,14 +217,13 @@ def get_product(
 def create_inbound_order(
     payload: _InboundRequest,
     db: Session = Depends(get_sql_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(_warehouse_employee),
 ) -> SKUEntryResponse:
     """Record an inbound stock movement (SKUEntry).
 
     The ``user_uuid`` is **not** taken from the request body; it is
     injected from the authenticated user's token.
     """
-    _require_inventory_writer(current_user)
 
     sku = db.get(SKU, payload.sku_id)
     if sku is None:
@@ -255,19 +258,20 @@ def create_inbound_order(
 
 @inventory_router.post(
     "/orders/outbound",
-    response_model=SKUExitResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 def create_outbound_order(
     payload: _OutboundRequest,
     db: Session = Depends(get_sql_session),
-    current_user: User = Depends(get_current_user),
-) -> SKUExitResponse:
-    """Record an outbound stock movement immediately for any authenticated user.
+    current_user: User = Depends(_warehouse_employee),
+) -> dict[str, object]:
+    """Create a pending outbound request; a second operator must approve it.
 
-    Stock cannot become negative. The ``user_uuid`` is always taken from
-    the authenticated user's token, never from request input.
+    Stock cannot become negative, and the request is not dispatched until a
+    different warehouse supervisor approves it. The requester identity is
+    always taken from the authenticated user's token.
     """
+    # Lock the SKU row to serialize outbound stock checks and requests.
     sku = _lock_sku(db, payload.sku_id)
     if sku is None:
         raise HTTPException(
@@ -306,21 +310,60 @@ def create_outbound_order(
             ),
         )
 
-    exit_order = SKUExit(
+    request = PendingSKUExit(
         sku_id=payload.sku_id,
         quantity=payload.quantity,
-        user_uuid=str(current_user.id),
+        requester_uuid=str(current_user.id),
     )
-    db.add(exit_order)
+    db.add(request)
     db.commit()
-    db.refresh(exit_order)
-    _invalidate_sku_caches(payload.sku_id)
-    return SKUExitResponse(
-        id=exit_order.id,
-        sku_id=exit_order.sku_id,
-        quantity=exit_order.quantity,
-        created_at=exit_order.created_at,
-    )
+    db.refresh(request)
+    return {"request_id": request.id, "status": request.status, "detail": "Outbound request awaits approval by a different manager/admin."}
+
+
+@inventory_router.post("/orders/outbound/{request_id}/decision")
+def decide_outbound_order(
+    request_id: str,
+    payload: _OutboundDecision,
+    db: Session = Depends(get_sql_session),
+    current_user: User = Depends(_warehouse_supervisor),
+) -> dict[str, object]:
+    """Approve/reject a pending dispatch, recording an immutable decision outcome."""
+    request = db.exec(
+        select(PendingSKUExit)
+        .where(PendingSKUExit.id == request_id)
+        .with_for_update()
+    ).first()
+    if request is None:
+        raise HTTPException(status_code=404, detail="Outbound request not found.")
+    if request.status != "pending":
+        raise HTTPException(status_code=409, detail="Outbound request has already been decided.")
+    if request.requester_uuid == str(current_user.id):
+        raise HTTPException(status_code=403, detail="A different operator must approve this request.")
+
+    if payload.decision == "approve":
+        # Serialize stock checks for dispatch approvals of the same SKU.
+        db.exec(select(SKU).where(SKU.id == request.sku_id).with_for_update()).first()
+        current_stock = _compute_current_stock(db, request.sku_id)
+        if current_stock < request.quantity:
+            raise HTTPException(status_code=409, detail="Stock changed; insufficient stock for approval.")
+        db.add(SKUExit(
+            sku_id=request.sku_id,
+            quantity=request.quantity,
+            user_uuid=str(current_user.id),
+        ))
+        request.status = "approved"
+    else:
+        request.status = "rejected"
+    request.approver_uuid = str(current_user.id)
+    request.decision_comment = payload.comment or None
+    request.decided_at = datetime.now(timezone.utc)
+    db.add(request)
+    db.commit()
+    if request.status == "approved":
+        inventory_products_cache.invalidate("all")
+        inventory_product_cache.invalidate(request.sku_id)
+    return {"request_id": request.id, "status": request.status, "approver_uuid": request.approver_uuid}
 
 
 # ── GET /inventory/orders ───────────────────────────────────────────
@@ -329,7 +372,7 @@ def create_outbound_order(
 @inventory_router.get("/orders")
 def list_orders(
     db: Session = Depends(get_sql_session),
-    _current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(_warehouse_employee),
 ) -> list[dict[str, object]]:
     """List a combined history of inbound and outbound orders with SKU data.
 

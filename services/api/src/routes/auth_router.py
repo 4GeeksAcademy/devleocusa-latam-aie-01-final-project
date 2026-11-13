@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from src.cache import me_cache
 from src.models.profile import Profile, ProfileResponse
-from src.models.user import User
+from src.models.user import Department, User
 from src.services.auth_service import create_access_token, get_current_user
 from src.services.password_reset_service import (
     PasswordResetTokenError,
@@ -34,6 +34,7 @@ class TokenResponse(BaseModel):
 class MeResponse(BaseModel):
     email: str
     role: str
+    department: Department | None
     profile: ProfileResponse | None
 
 
@@ -93,6 +94,7 @@ def get_me(current_user: User = Depends(get_current_user)) -> MeResponse:
     response = MeResponse(
         email=current_user.email,
         role=current_user.role.value,
+        department=current_user.department,
         profile=_to_profile_response(profile),
     )
     me_cache.set(cache_key, response)
