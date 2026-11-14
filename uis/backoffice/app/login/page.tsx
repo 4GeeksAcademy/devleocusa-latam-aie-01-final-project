@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Alert } from '../components/ui/Alert';
-import { login, setSessionToken } from '../../services/authApi';
+import { exchangeFederatedLoginCode, login, setSessionToken } from '../../services/authApi';
 import {
   trackLoginAttempt,
   trackLoginSuccess,
@@ -18,7 +18,34 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isMicrosoftBusy, setIsMicrosoftBusy] = useState(false);
   const attemptRef = useRef(0);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('federated_code');
+    const failure = params.get('federated_error');
+    if (failure === 'account_not_linked') {
+      setErrorMessage('Esta cuenta Microsoft no está vinculada a una cuenta TrackFlow. Solicita primero el alta por el canal de onboarding correspondiente.');
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+    if (failure) {
+      setErrorMessage('No se pudo completar el inicio de sesión con Microsoft. Inténtalo de nuevo o utiliza otro método.');
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+    if (!code) return;
+    setIsMicrosoftBusy(true);
+    window.history.replaceState({}, '', window.location.pathname);
+    void exchangeFederatedLoginCode(code)
+      .then((token) => {
+        setSessionToken(token);
+        router.replace('/');
+      })
+      .catch((error: unknown) => setErrorMessage((error as Error).message || 'No fue posible iniciar sesión con Microsoft.'))
+      .finally(() => setIsMicrosoftBusy(false));
+  }, [router]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -129,6 +156,23 @@ export default function LoginPage() {
             {isSubmitting ? 'Ingresando...' : 'Entrar al sistema'}
           </button>
         </form>
+
+        <div className="my-4 flex items-center gap-3 text-xs text-slate-400" aria-hidden="true">
+          <span className="h-px flex-1 bg-slate-200" />
+          <span>o</span>
+          <span className="h-px flex-1 bg-slate-200" />
+        </div>
+        <button
+          type="button"
+          disabled={isMicrosoftBusy || isSubmitting}
+          onClick={() => {
+            const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+            window.location.assign(`${apiBase.replace(/\/$/, '')}/auth/federated/microsoft/login`);
+          }}
+          className="inline-flex w-full items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {isMicrosoftBusy ? 'Validando cuenta Microsoft...' : 'Iniciar sesión con Microsoft'}
+        </button>
 
         <p className="mt-4 text-center text-sm text-slate-600">
           No tienes cuenta?{' '}

@@ -142,6 +142,10 @@ people_records_table = db.table("people_records")
 client_renewals_table = db.table("client_renewals")
 chat_sessions_table = db.table("chat_sessions")
 chat_messages_table = db.table("chat_messages")
+federated_identities_table = db.table("federated_identities")
+federated_audit_table = db.table("federated_auth_audit")
+oauth_transactions_table = db.table("oauth_transactions")
+federated_login_codes_table = db.table("federated_login_codes")
 
 
 def get_db() -> TinyDB:
@@ -222,6 +226,26 @@ def get_chat_sessions_table() -> Table:
 def get_chat_messages_table() -> Table:
     """Return durable local chat message records."""
     return chat_messages_table
+
+
+def get_federated_identities_table() -> Table:
+    """Return Microsoft identity links."""
+    return federated_identities_table
+
+
+def get_federated_audit_table() -> Table:
+    """Return append-only federated authentication audit events."""
+    return federated_audit_table
+
+
+def get_oauth_transactions_table() -> Table:
+    """Return short-lived OAuth state transactions."""
+    return oauth_transactions_table
+
+
+def get_federated_login_codes_table() -> Table:
+    """Return short-lived one-time federated login codes."""
+    return federated_login_codes_table
 
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ from src.bootstrap import run_demo_bootstrap
 from src.agent.runtime import agent_graph_runtime
 from src.agent.rate_limit import create_agent_rate_limiter
 from src.routes.auth_router import auth_router
+from src.routes.federated_auth_router import federated_auth_router
 from src.routes.incidents_fastapi_router import incidents_fastapi_router
 from src.routes.inventory import inventory_router
 from src.routes.profiles_router import profiles_router
@@ -94,6 +95,7 @@ async def add_security_headers(request, call_next):
 app.add_middleware(TelemetryMiddleware)
 
 app.include_router(auth_router)
+app.include_router(federated_auth_router)
 app.include_router(users_router)
 app.include_router(access_admin_router)
 app.include_router(profiles_router)

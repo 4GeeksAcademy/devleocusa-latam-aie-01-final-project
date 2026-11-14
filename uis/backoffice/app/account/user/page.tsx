@@ -3,7 +3,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Alert } from '../../components/ui/Alert';
 import { Spinner } from '../../components/ui/Spinner';
-import { apiFetch, changePassword, getCurrentUser, getSessionToken, logout } from '../../../services/authApi';
+import {
+  apiFetch, changePassword, getCurrentUser, getFederatedProviders, getSessionToken,
+  logout, startMicrosoftLink, unlinkMicrosoft,
+} from '../../../services/authApi';
+import type { LinkedFederatedProvider } from '../../../services/authApi';
 import type { CurrentUser } from '../../../services/authApi';
 
 /* ── Perfil ─────────────────────────────────────────── */
@@ -17,6 +21,7 @@ interface ProfileFormValues {
 
 interface AuthMeResponse {
   email?: string;
+  has_password?: boolean;
   profile?: {
     name?: string | null;
     phone?: string | null;
@@ -99,6 +104,11 @@ export default function AccountUserPage() {
 
   // Rol (solo lectura)
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [hasPasswordMethod, setHasPasswordMethod] = useState(true);
+  const [federatedProviders, setFederatedProviders] = useState<LinkedFederatedProvider[]>([]);
+  const [federatedError, setFederatedError] = useState<string | null>(null);
+  const [federatedSuccess, setFederatedSuccess] = useState<string | null>(null);
+  const [isFederatedBusy, setIsFederatedBusy] = useState(false);
 
   /* Cargar perfil + rol al montar */
   useEffect(() => {
@@ -112,8 +122,9 @@ export default function AccountUserPage() {
 
       try {
         // Cargamos el rol desde /auth/me que ya incluye { email, role }
-        const [meResponse] = await Promise.all([
+        const [meResponse, providers] = await Promise.all([
           apiFetch('/auth/me', { method: 'GET' }),
+          getFederatedProviders(),
         ]);
 
         if (meResponse.status === 401) return;
@@ -134,6 +145,18 @@ export default function AccountUserPage() {
             email: mePayload.email || '',
             role: mePayload.role || 'user',
           });
+          setHasPasswordMethod(Boolean(mePayload.has_password));
+          setFederatedProviders(providers);
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('federated') === 'linked') {
+            setFederatedSuccess('Tu cuenta Microsoft quedó vinculada correctamente.');
+            window.history.replaceState({}, '', window.location.pathname);
+          }
+          const linkError = params.get('federated_error');
+          if (linkError) {
+            setFederatedError(linkError);
+            window.history.replaceState({}, '', window.location.pathname);
+          }
         }
       } catch (error) {
         if (isMounted) setProfileError(getReadableErrorMessage(error));
@@ -248,6 +271,38 @@ export default function AccountUserPage() {
       setPasswordError((error as Error).message || 'No fue posible cambiar la contraseña.');
     } finally {
       setIsSubmittingPassword(false);
+    }
+  };
+
+  const handleMicrosoftLink = async () => {
+    setIsFederatedBusy(true);
+    setFederatedError(null);
+    setFederatedSuccess(null);
+    try {
+      const authorizationUrl = await startMicrosoftLink();
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      setFederatedError(getReadableErrorMessage(error));
+      setIsFederatedBusy(false);
+    }
+  };
+
+  const handleMicrosoftUnlink = async () => {
+    const warning = hasPasswordMethod
+      ? '¿Desvincular Microsoft de tu cuenta? Podrás seguir accediendo con tu contraseña.'
+      : 'Microsoft podría ser tu único método de acceso. La API rechazará la acción si no tienes otro método.';
+    if (!window.confirm(warning)) return;
+    setIsFederatedBusy(true);
+    setFederatedError(null);
+    setFederatedSuccess(null);
+    try {
+      await unlinkMicrosoft();
+      setFederatedProviders([]);
+      setFederatedSuccess('Microsoft se desvinculó correctamente.');
+    } catch (error) {
+      setFederatedError(getReadableErrorMessage(error));
+    } finally {
+      setIsFederatedBusy(false);
     }
   };
 
@@ -403,6 +458,33 @@ export default function AccountUserPage() {
       {/* Tab: Seguridad */}
       {activeTab === 'security' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <section className="mb-8 space-y-4 border-b border-slate-200 pb-6" aria-labelledby="federated-heading">
+            <div>
+              <h3 id="federated-heading" className="text-lg font-semibold text-slate-900">Inicio de sesión federado</h3>
+              <p className="text-sm text-slate-600">Vincula únicamente una cuenta Microsoft que controles. Esto no cambia tu contraseña.</p>
+            </div>
+            {federatedProviders.some((item) => item.provider === 'microsoft') ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-4">
+                <p className="text-sm text-slate-700">Microsoft vinculado · {federatedProviders.find((item) => item.provider === 'microsoft')?.email_at_link_time}</p>
+                <button type="button" onClick={handleMicrosoftUnlink} disabled={isFederatedBusy}
+                  className="rounded-md border border-rose-300 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60">
+                  Desvincular Microsoft
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={handleMicrosoftLink} disabled={isFederatedBusy}
+                className="rounded-md bg-sky-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-800 disabled:opacity-60">
+                {isFederatedBusy ? 'Conectando...' : 'Vincular cuenta Microsoft'}
+              </button>
+            )}
+            {federatedError ? <Alert variant="error" title="No se pudo actualizar Microsoft">{federatedError}</Alert> : null}
+            {federatedSuccess ? <Alert variant="success" title="Autenticación federada">{federatedSuccess}</Alert> : null}
+            {!hasPasswordMethod ? (
+              <Alert variant="error" title="Microsoft puede ser tu único método de acceso">
+                Configura una contraseña antes de desvincular Microsoft.
+              </Alert>
+            ) : null}
+          </section>
           <form onSubmit={handlePasswordSubmit} className="space-y-4" noValidate>
             <div className="space-y-1">
               <label htmlFor="current-password" className="text-sm font-medium text-slate-700">

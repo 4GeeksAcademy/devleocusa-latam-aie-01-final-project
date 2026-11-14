@@ -49,6 +49,7 @@ def create_user(
     address: str | None = None,
     tenant_id: str | None = None,
     department: Department | str | None = None,
+    audience: str = "internal",
 ) -> User:
     """Create a user in TinyDB with hashed password and optional linked profile."""
 
@@ -67,6 +68,7 @@ def create_user(
         "role": resolved_role.value,
         "department": department.value if isinstance(department, Department) else department,
         "tenant_id": tenant_id,
+        "audience": audience,
         "created_at": _now_iso(),
     }
 

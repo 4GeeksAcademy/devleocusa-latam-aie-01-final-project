@@ -128,6 +128,56 @@ export async function getCurrentUser(): Promise<CurrentUser> {
   return (await response.json()) as CurrentUser;
 }
 
+export interface LinkedFederatedProvider {
+  user_id: number | string;
+  provider: 'microsoft';
+  provider_user_id: string;
+  email_at_link_time: string;
+  linked_at: string;
+  audience: 'internal' | 'b2b_client';
+}
+
+export async function getFederatedProviders(): Promise<LinkedFederatedProvider[]> {
+  const response = await apiFetch('/auth/federated/providers');
+  if (!response.ok) throw new Error(await readApiError(response, 'No fue posible cargar los proveedores vinculados.'));
+  const payload = (await response.json()) as { providers: LinkedFederatedProvider[] };
+  return payload.providers;
+}
+
+export async function startMicrosoftLink(): Promise<string> {
+  const response = await apiFetch('/auth/federated/microsoft/link/start', { method: 'POST' });
+  if (!response.ok) throw new Error(await readApiError(response, 'No fue posible iniciar la vinculación con Microsoft.'));
+  const payload = (await response.json()) as { authorization_url: string };
+  return payload.authorization_url;
+}
+
+export async function unlinkMicrosoft(): Promise<void> {
+  const response = await apiFetch('/auth/federated/microsoft/link', { method: 'DELETE' });
+  if (!response.ok) throw new Error(await readApiError(response, 'No fue posible desvincular Microsoft.'));
+}
+
+export async function exchangeFederatedLoginCode(code: string): Promise<string> {
+  const response = await apiFetch('/auth/federated/exchange', {
+    method: 'POST',
+    skipAuth: true,
+    body: JSON.stringify({ code }),
+  });
+  if (!response.ok) throw new Error(await readApiError(response, 'La cuenta Microsoft no está vinculada a una cuenta TrackFlow.'));
+  const payload = (await response.json()) as LoginResponse;
+  const token = payload.access_token || payload.token || payload.jwt;
+  if (!token) throw new Error('El servidor no devolvió una sesión válida.');
+  return token;
+}
+
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = (await response.json()) as ApiErrorResponse;
+    return getErrorMessage(payload, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
 export function logout(): void {
   if (typeof window === 'undefined') {
     return;

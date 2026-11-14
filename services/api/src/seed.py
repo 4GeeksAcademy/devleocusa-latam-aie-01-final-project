@@ -154,15 +154,18 @@ def build_seed_leads() -> list[LeadResponse]:
 def main() -> int:
     suppliers_table = get_suppliers_table()
 
-    if len(suppliers_table) > 0:
-        print("La base de datos ya contiene registros. No se insertaron datos duplicados.")
-        return 0
+    if len(suppliers_table) == 0:
+        suppliers = build_seed_suppliers()
+        payload = [supplier.model_dump(mode="json") for supplier in suppliers]
+        inserted_ids = suppliers_table.insert_multiple(payload)
+        print(f"Transportistas insertados: {len(inserted_ids)}")
+    else:
+        print("La base de datos ya contiene transportistas; se omiten duplicados.")
 
-    suppliers = build_seed_suppliers()
-    payload = [supplier.model_dump(mode="json") for supplier in suppliers]
-    inserted_ids = suppliers_table.insert_multiple(payload)
+    from src.services.federated_auth_service import seed_federated_auth_users
 
-    print(f"Registros insertados: {len(inserted_ids)}")
+    seeded_users = seed_federated_auth_users()
+    print(f"Usuarios de autenticación federada disponibles: {len(seeded_users)}")
     db.close()
     return 0
 
