@@ -110,12 +110,15 @@ def run_demo_bootstrap() -> None:
     suppliers = ensure_suppliers_seeded()
     leads = ensure_leads_seeded()
     kpis_written = ensure_executive_kpis_seeded()
+    from src.audit_seed import ensure_audit_examples
 
-    if tenants or suppliers or leads or kpis_written:
+    audit_events = ensure_audit_examples()
+
+    if tenants or suppliers or leads or kpis_written or audit_events:
         print(
             "[bootstrap] demo data applied: "
             f"{tenants} operator(s) assigned to tenant '{DEFAULT_TENANT_ID}', "
             f"{suppliers} supplier(s) inserted, "
             f"{leads} demo lead(s) inserted, "
-            f"executive KPIs seeded: {kpis_written}."
+            f"executive KPIs seeded: {kpis_written}, audit examples inserted: {audit_events}."
         )

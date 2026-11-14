@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from src.cache import me_cache, profile_cache, users_list_cache
@@ -12,6 +12,7 @@ from src.models.profile import Profile, ProfileResponse
 from src.models.user import Department, TinyDBId, User, UserRole
 from src.services.auth_service import get_current_user
 from src.services.access_control import require_roles
+from src.services.audit_log_service import append_event_committed
 from src.services.profile_service import get_profile_by_user_id
 from src.services.security import PasswordValidationError
 from src.services.user_service import (
@@ -110,6 +111,7 @@ def get_departments(_admin: User = Depends(_admin_only)) -> list[DepartmentRespo
 @users_router.post("", response_model=UserWithProfileResponse, status_code=status.HTTP_201_CREATED)
 def register_user(
     payload: UserCreateRequest,
+    request: Request,
 ) -> UserWithProfileResponse:
     # Self-service registration remains public; create_user assigns the
     # non-privileged default role and this payload intentionally has no role.
@@ -125,6 +127,13 @@ def register_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    append_event_committed(
+        actor_id="self-registration", actor_type="process", actor_name="public-registration",
+        action="user.created", resource_type="user", resource_id=str(user.id),
+        source=request.client.host if request.client else "unknown", department="Personas",
+        details={"role": user.role.value, "department": user.department.value if user.department else None},
+    )
 
     profile = get_profile_by_user_id(user.id)
 
@@ -160,6 +169,7 @@ def get_user(user_id: str, current_user: User = Depends(get_current_user)) -> Us
 def put_user(
     user_id: str,
     payload: UserUpdateRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
 ) -> UserResponse:
     if not _can_update_target_user(current_user, user_id):
@@ -178,6 +188,16 @@ def put_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    append_event_committed(
+        actor_id=str(current_user.id), actor_type="human", actor_name=current_user.email,
+        action="user.updated", resource_type="user", resource_id=str(user.id),
+        source=request.client.host if request.client else "unknown",
+        department=current_user.department.value if current_user.department else "Personas",
+        details={"changed_fields": sorted(updates.keys()), "role": user.role.value,
+                 "department": user.department.value if user.department else None,
+                 "is_active": user.is_active},
+    )
+
     # Invalidate caches — user data changed (email/role)
     me_cache.invalidate(str(user_id))
     profile_cache.invalidate(str(user_id))
@@ -187,8 +207,17 @@ def put_user(
 
 
 @users_router.delete("/{user_id}")
-def remove_user(user_id: str, current_user: User = Depends(_admin_only)) -> dict[str, str]:
+def remove_user(user_id: str, request: Request, current_user: User = Depends(_admin_only)) -> dict[str, str]:
     _require_admin(current_user)
+    target = get_user_by_id(user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    append_event_committed(
+        actor_id=str(current_user.id), actor_type="human", actor_name=current_user.email,
+        action="user.deleted", resource_type="user", resource_id=str(target.id),
+        source=request.client.host if request.client else "unknown", department="Personas",
+        details={"role": target.role.value, "department": target.department.value if target.department else None},
+    )
     deleted = delete_user(user_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

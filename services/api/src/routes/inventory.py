@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session, func, select
 
 from src.cache import inventory_products_cache, inventory_product_cache
 from src.database import get_sql_session
 from src.models.models import PendingSKUExit, SKU, SKUEntry, SKUExit
+from src.services.audit_log_service import append_event
 from src.models.schemas import (
     SKUCreate,
     SKUEntryRead,
@@ -133,6 +134,18 @@ class _OutboundDecision(BaseModel):
     comment: str = Field(default="", max_length=1000)
 
 
+class _ManualAdjustment(BaseModel):
+    """Manual inventory correction, deliberately separate from normal flows."""
+
+    sku_id: str = Field(min_length=1)
+    quantity_delta: int = Field(ne=0)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+def _request_source(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 # ── GET /inventory/products ──────────────────────────────────────────
 
 
@@ -216,6 +229,7 @@ def get_product(
 )
 def create_inbound_order(
     payload: _InboundRequest,
+    request: Request,
     db: Session = Depends(get_sql_session),
     current_user: User = Depends(_warehouse_employee),
 ) -> SKUEntryResponse:
@@ -238,6 +252,14 @@ def create_inbound_order(
         user_uuid=str(current_user.id),
     )
     db.add(entry)
+    append_event(
+        db,
+        actor_id=str(current_user.id), actor_type="human", actor_name=current_user.email,
+        action="inventory.inbound.recorded", resource_type="sku", resource_id=sku.id,
+        source=_request_source(request), department=Department.WAREHOUSE_OPERATIONS.value,
+        country="Estados Unidos" if sku.warehouse == "Los Angeles" else "España",
+        warehouse_id=sku.warehouse, details={"quantity": entry.quantity, "entry_id": entry.id},
+    )
     db.commit()
     db.refresh(entry)
 
@@ -253,6 +275,43 @@ def create_inbound_order(
     )
 
 
+@inventory_router.post("/adjustments", status_code=status.HTTP_201_CREATED)
+def create_manual_adjustment(
+    payload: _ManualAdjustment,
+    request: Request,
+    db: Session = Depends(get_sql_session),
+    current_user: User = Depends(_warehouse_supervisor),
+) -> dict[str, object]:
+    """Record an out-of-band stock correction and audit it transactionally."""
+    sku = _lock_sku(db, payload.sku_id)
+    if sku is None:
+        raise HTTPException(status_code=404, detail="SKU no encontrado.")
+    movement_id: str
+    if payload.quantity_delta > 0:
+        movement = SKUEntry(sku_id=sku.id, quantity=payload.quantity_delta, user_uuid=str(current_user.id))
+        db.add(movement)
+        movement_id = movement.id
+    else:
+        if _compute_current_stock(db, sku.id) < abs(payload.quantity_delta):
+            raise HTTPException(status_code=409, detail="El ajuste dejaría el inventario por debajo de cero.")
+        movement = SKUExit(sku_id=sku.id, quantity=abs(payload.quantity_delta), user_uuid=str(current_user.id))
+        db.add(movement)
+        movement_id = movement.id
+    append_event(
+        db,
+        actor_id=str(current_user.id), actor_type="human", actor_name=current_user.email,
+        action="inventory.manual_adjustment", resource_type="sku", resource_id=sku.id,
+        source=_request_source(request), department=Department.WAREHOUSE_OPERATIONS.value,
+        country="Estados Unidos" if sku.warehouse == "Los Angeles" else "España",
+        warehouse_id=sku.warehouse,
+        details={"quantity_delta": payload.quantity_delta, "reason": payload.reason, "movement_id": movement_id},
+    )
+    db.commit()
+    inventory_products_cache.invalidate("all")
+    inventory_product_cache.invalidate(sku.id)
+    return {"sku_id": sku.id, "quantity_delta": payload.quantity_delta, "movement_id": movement_id}
+
+
 # ── POST /inventory/orders/outbound ─────────────────────────────────
 
 
@@ -262,6 +321,7 @@ def create_inbound_order(
 )
 def create_outbound_order(
     payload: _OutboundRequest,
+    request: Request,
     db: Session = Depends(get_sql_session),
     current_user: User = Depends(_warehouse_employee),
 ) -> dict[str, object]:
@@ -316,6 +376,14 @@ def create_outbound_order(
         requester_uuid=str(current_user.id),
     )
     db.add(request)
+    append_event(
+        db,
+        actor_id=str(current_user.id), actor_type="human", actor_name=current_user.email,
+        action="inventory.outbound.requested", resource_type="pending_sku_exit", resource_id=request.id,
+        source=_request_source(request), department=Department.WAREHOUSE_OPERATIONS.value,
+        country="Estados Unidos" if sku.warehouse == "Los Angeles" else "España",
+        warehouse_id=sku.warehouse, details={"sku_id": sku.id, "quantity": request.quantity},
+    )
     db.commit()
     db.refresh(request)
     return {"request_id": request.id, "status": request.status, "detail": "Outbound request awaits approval by a different manager/admin."}
@@ -325,6 +393,7 @@ def create_outbound_order(
 def decide_outbound_order(
     request_id: str,
     payload: _OutboundDecision,
+    request: Request,
     db: Session = Depends(get_sql_session),
     current_user: User = Depends(_warehouse_supervisor),
 ) -> dict[str, object]:
@@ -359,6 +428,16 @@ def decide_outbound_order(
     request.decision_comment = payload.comment or None
     request.decided_at = datetime.now(timezone.utc)
     db.add(request)
+    sku = db.get(SKU, request.sku_id)
+    append_event(
+        db,
+        actor_id=str(current_user.id), actor_type="human", actor_name=current_user.email,
+        action=f"inventory.outbound.{request.status}", resource_type="pending_sku_exit", resource_id=request.id,
+        source=_request_source(request), department=Department.WAREHOUSE_OPERATIONS.value,
+        country="Estados Unidos" if sku and sku.warehouse == "Los Angeles" else "España",
+        warehouse_id=sku.warehouse if sku else None,
+        details={"sku_id": request.sku_id, "quantity": request.quantity, "comment": payload.comment},
+    )
     db.commit()
     if request.status == "approved":
         inventory_products_cache.invalidate("all")

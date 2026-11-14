@@ -301,6 +301,7 @@ def init_db() -> None:
         SKUEntry,
         SKUExit,
     )
+    from src.models.audit_log import AuditLogEntry  # noqa: F401
     from src.models.rfp import (  # noqa: F401
         DepartmentSection,
         RFPFinalDocument,

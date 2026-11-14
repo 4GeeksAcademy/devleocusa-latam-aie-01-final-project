@@ -33,6 +33,7 @@ from src.routes.knowledge_router import knowledge_router
 from src.routes.leads_router import leads_router
 from src.routes.rfp_router import rfp_router
 from src.routes.chat_router import chat_router
+from src.routes.audit_log_router import audit_log_router
 from src.services.rfp_event_service import rfp_event_broker
 from src.services.auth_service import validate_production_security
 
@@ -108,6 +109,7 @@ app.include_router(knowledge_router)
 app.include_router(leads_router)
 app.include_router(rfp_router)
 app.include_router(chat_router)
+app.include_router(audit_log_router)
 
 # Telemetry event ingestion — prefix configurable via TELEMETRY_ENDPOINT
 _telemetry_prefix = os.getenv("TELEMETRY_ENDPOINT", "/telemetry").rstrip("/")
