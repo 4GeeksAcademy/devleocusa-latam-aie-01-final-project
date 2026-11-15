@@ -26,17 +26,17 @@ export default function LoginPage() {
     const code = params.get('federated_code');
     const failure = params.get('federated_error');
     if (failure === 'account_not_linked') {
-      setErrorMessage('Esta cuenta Microsoft no está vinculada a una cuenta TrackFlow. Solicita primero el alta por el canal de onboarding correspondiente.');
+      queueMicrotask(() => setErrorMessage('Esta cuenta Microsoft no está vinculada a una cuenta TrackFlow. Solicita primero el alta por el canal de onboarding correspondiente.'));
       window.history.replaceState({}, '', window.location.pathname);
       return;
     }
     if (failure) {
-      setErrorMessage('No se pudo completar el inicio de sesión con Microsoft. Inténtalo de nuevo o utiliza otro método.');
+      queueMicrotask(() => setErrorMessage('No se pudo completar el inicio de sesión con Microsoft. Inténtalo de nuevo o utiliza otro método.'));
       window.history.replaceState({}, '', window.location.pathname);
       return;
     }
     if (!code) return;
-    setIsMicrosoftBusy(true);
+    queueMicrotask(() => setIsMicrosoftBusy(true));
     window.history.replaceState({}, '', window.location.pathname);
     void exchangeFederatedLoginCode(code)
       .then((token) => {

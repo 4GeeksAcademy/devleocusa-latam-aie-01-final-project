@@ -15,6 +15,7 @@ const navItems: NavItem[] = [
   { href: "/", label: "Inicio" },
   { href: "/account/user", label: "Mi usuario" },
   { href: "/admin/access", label: "Roles y departamentos" },
+  { href: "/auditoria", label: "Registro de auditoría" },
   { href: "/candidaturas", label: "Candidaturas" },
   { href: "/leads", label: "Prospectos" },
   { href: "/operaciones/inventario", label: "Inventario operativo" },
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
 export function SidebarNav() {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canViewAudit, setCanViewAudit] = useState(false);
   const [canAccessLeads, setCanAccessLeads] = useState(false);
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export function SidebarNav() {
       .then((user) => {
         if (active) {
           setIsAdmin(user.role === "admin");
+          setCanViewAudit(user.role === "admin" || user.role === "manager");
           setCanAccessLeads(
             user.role === "admin" ||
               ((user.role === "user" || user.role === "manager") &&
@@ -52,6 +55,7 @@ export function SidebarNav() {
 
   const visibleItems = navItems.filter((item) => {
     if (item.href === "/admin/access") return isAdmin;
+    if (item.href === "/auditoria") return canViewAudit;
     if (item.href === "/leads") return canAccessLeads;
     return true;
   });

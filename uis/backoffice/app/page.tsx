@@ -1,6 +1,6 @@
-import type { ReactElement } from 'react';
+'use client';
 
-"use client";
+import type { ReactElement } from 'react';
 
 import Link from "next/link";
 import { useEffect, useState } from "react";

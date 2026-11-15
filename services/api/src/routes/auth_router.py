@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from src.cache import me_cache
@@ -17,6 +17,7 @@ from src.services.password_reset_service import (
 from src.services.profile_service import get_profile_by_user_id
 from src.services.security import PasswordValidationError, verify_password
 from src.services.user_service import get_user_by_email, update_user_password
+from src.services.audit_log_service import append_event_committed
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -68,15 +69,36 @@ class ChangePasswordRequest(BaseModel):
 
 
 @auth_router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest) -> TokenResponse:
+def login(payload: LoginRequest, request: Request) -> TokenResponse:
     user = get_user_by_email(payload.email)
     if user is None or not verify_password(payload.password, user.hashed_password):
+        append_event_committed(
+            actor_id=str(user.id) if user else "unknown",
+            actor_type="human" if user else "process",
+            actor_name=user.email if user else "unknown principal",
+            action="auth.login.failed",
+            resource_type="authentication",
+            resource_id=str(user.id) if user else "unknown",
+            source=request.client.host if request.client else "api",
+            department=user.department.value if user and user.department else "Tecnología",
+            details={"reason": "invalid_credentials", "submitted_identifier": payload.email.strip().lower()[:254]},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    append_event_committed(
+        actor_id=str(user.id),
+        actor_type="human",
+        actor_name=user.email,
+        action="auth.login.succeeded",
+        resource_type="authentication",
+        resource_id=str(user.id),
+        source=request.client.host if request.client else "api",
+        department=user.department.value if user.department else "Tecnología",
+    )
     token = create_access_token(user.id)
     return TokenResponse(access_token=token)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from tinydb.table import Document
 
 from src.cache import supplier_cache, suppliers_list_cache
@@ -19,8 +19,11 @@ from src.models.supplier import (
 )
 from src.models.user import User
 from src.models.user import Department, UserRole
+from src.models.carrier import ShipmentRequest
 from src.services.access_control import require_access
 from src.services.auth_service import get_current_user
+from src.services.carrier_service import assign_shipment
+from src.services.audit_log_service import append_event_committed
 
 suppliers_fastapi_router = APIRouter(tags=["suppliers-legacy"])
 
@@ -203,3 +206,37 @@ def delete_supplier_route(
     suppliers_list_cache.clear()
 
     return {"message": "Proveedor eliminado."}
+
+
+@suppliers_fastapi_router.post("/shipments/assign")
+def assign_shipment_route(
+    payload: ShipmentRequest,
+    request: Request,
+    current_user: User = Depends(_carrier_employee),
+) -> dict[str, object]:
+    """Assign a shipment and record the authenticated actor in the audit ledger."""
+    try:
+        assignment = assign_shipment(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if assignment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transportista no encontrado.")
+
+    append_event_committed(
+        actor_id=str(current_user.id),
+        actor_type="human",
+        actor_name=current_user.email,
+        action="carrier.assignment.changed",
+        resource_type="shipment",
+        resource_id=assignment.id,
+        source=request.client.host if request.client else "api",
+        department=current_user.department.value if current_user.department else Department.LAST_MILE_CARRIERS.value,
+        details={
+            "carrier_id": assignment.carrier_id,
+            "carrier_name": assignment.carrier_nombre,
+            "origin": assignment.origen,
+            "destination": assignment.destino,
+            "weight_kg": assignment.peso_kg,
+        },
+    )
+    return assignment.model_dump(mode="json")

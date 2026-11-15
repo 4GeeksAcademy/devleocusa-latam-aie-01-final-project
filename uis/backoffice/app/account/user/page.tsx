@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Alert } from '../../components/ui/Alert';
 import { Spinner } from '../../components/ui/Spinner';
 import {
-  apiFetch, changePassword, getCurrentUser, getFederatedProviders, getSessionToken,
+  apiFetch, changePassword, getFederatedProviders, getSessionToken,
   logout, startMicrosoftLink, unlinkMicrosoft,
 } from '../../../services/authApi';
 import type { LinkedFederatedProvider } from '../../../services/authApi';
