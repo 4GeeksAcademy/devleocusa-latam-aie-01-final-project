@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import os
 import secrets
@@ -274,8 +275,44 @@ def _send_reset_email(email: str, reset_link: str, expire_minutes: int) -> None:
         raise RuntimeError("The email provider returned an unexpected error.")
 
 
-def issue_password_reset(user: User) -> None:
-    """Create and store a reset token for an existing user and send reset email."""
+def issue_password_reset(user: User, idempotency_key: str | None = None) -> str | None:
+    """Create a reset token and enqueue its email without calling SendGrid.
+
+    Repeated requests with the same idempotency key return the existing task
+    without rotating the single-use token stored for the user.
+    """
+
+    from src.services.async_email_service import (
+        create_or_get_operation,
+        find_operation_by_key,
+        get_operation,
+        make_password_reset_idempotency_key,
+        store_secret_payload,
+    )
+    from src.tasks import send_password_reset_email
+
+    # If the caller supplied a key, scope and hash it before looking it up;
+    # the raw value is never persisted or logged.
+    scoped_key = None
+    if idempotency_key:
+        scoped_key = hmac.new(
+            _get_secret_key().encode("utf-8"),
+            f"password_reset_request:v1:{user.id}:{idempotency_key}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        existing = find_operation_by_key(scoped_key)
+        if existing:
+            record = get_operation(existing)
+            if record and record["status"] == "failed":
+                from src.services.async_email_service import update_operation
+
+                update_operation(existing, status="pending", retry_count=0)
+                send_password_reset_email.apply_async(
+                    kwargs={"schema_version": 1, "operation_id": existing},
+                    task_id=existing,
+                    queue="emails",
+                )
+            return existing
 
     expire_minutes = _get_reset_expire_minutes()
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
@@ -287,16 +324,39 @@ def issue_password_reset(user: User) -> None:
     raw_token = jwt.encode(payload, _get_secret_key(), algorithm=_get_algorithm())
     token_hash = _hash_token(raw_token)
 
-    if not _store_reset_token(user.id, token_hash, expires_at):
-        logger.warning("Skipping password reset for invalid user id: %r", user.id)
-        return
+    operation_key = scoped_key or make_password_reset_idempotency_key(user.id, token_hash)
+    operation_id, created = create_or_get_operation(operation_key)
+    if not created:
+        return operation_id
 
     reset_link = _build_reset_link(raw_token)
-
     try:
-        _send_reset_email(user.email, reset_link, expire_minutes)
-    except RuntimeError:
-        logger.warning("Password reset email delivery failed for user_id=%s", user.id)
+        task_payload = {
+            "schema_version": 1,
+            "operation_id": operation_id,
+            "idempotency_key": operation_key,
+            "recipient": user.email,
+            "reset_link": reset_link,
+            "expire_minutes": expire_minutes,
+            "requested_at": datetime.now(timezone.utc).isoformat(),
+        }
+        store_secret_payload(operation_id, task_payload)
+        if not _store_reset_token(user.id, token_hash, expires_at):
+            logger.warning("Skipping password reset for invalid user id")
+            return None
+        send_password_reset_email.apply_async(
+            kwargs={"schema_version": 1, "operation_id": operation_id},
+            task_id=operation_id,
+            queue="emails",
+        )
+    except Exception:
+        from src.services.async_email_service import update_operation
+
+        update_operation(operation_id, status="failed", error_message="Task dispatch failed")
+        logger.error("password_reset_email_dispatch_failed operation_id=%s", operation_id)
+        # The reset request response remains generic; operators can inspect status.
+        return operation_id
+    return operation_id
 
 
 def reset_password_with_token(token: str, new_password: str) -> None:
