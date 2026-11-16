@@ -24,11 +24,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sqlalchemy import text
 
 from src.celery_app import app
 from src.database import get_engine
+from src.services.async_email_service import (
+    claim_operation,
+    is_operation_completed,
+    load_secret_payload,
+    save_dead_letter,
+    update_operation,
+)
+from src.services.password_reset_service import _send_reset_email
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +55,19 @@ _REPORT_LABELS: dict[str, str] = {
     "executive_weekly": "Informe Consolidado Semanal – Dirección Ejecutiva",
     "client_pdf": "Informe PDF – Cliente TrackFlow",
 }
+
+
+class PasswordResetEmailMessage(BaseModel):
+    """Versioned, validated message contract for password reset email."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    schema_version: int = Field(ge=1, le=1)
+    operation_id: str
+    idempotency_key: str
+    recipient: str
+    reset_link: str
+    expire_minutes: int = Field(ge=15, le=60)
+    requested_at: str
 
 
 # ── Structured logging helper ──────────────────────────────────────────
@@ -359,3 +381,94 @@ def generate_report(
             raise
 
         self.retry(exc=exc, countdown=2 ** self.request.retries)
+
+
+@app.task(
+    bind=True,
+    max_retries=3,
+    name="src.tasks.send_password_reset_email",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)
+def send_password_reset_email(self, schema_version: int, operation_id: str) -> dict[str, Any]:
+    """Send a reset email from encrypted durable payload, outside the API."""
+    attempt = self.request.retries + 1
+    start = time.monotonic()
+    if schema_version != 1:
+        update_operation(operation_id, status="failed", error_message="Unsupported message schema")
+        raise ValueError("Unsupported password-reset email message schema")
+    if is_operation_completed(operation_id):
+        return {"status": "completed", "operation_id": operation_id, "deduplicated": True}
+    if not claim_operation(operation_id):
+        # Duplicate delivery while processing or terminally failed must not send again.
+        return {"status": "not_claimed", "operation_id": operation_id}
+
+    try:
+        raw_payload = load_secret_payload(operation_id)
+        message = PasswordResetEmailMessage.model_validate(raw_payload)
+        if message.operation_id != operation_id:
+            raise ValueError("Message operation ID does not match task ID")
+    except (LookupError, ValueError, ValidationError):
+        safe_error = "Invalid or unavailable email task payload"
+        update_operation(operation_id, status="failed", error_message=safe_error)
+        save_dead_letter(operation_id, attempt, safe_error)
+        _log_event(
+            event="password_reset_email_invalid_payload",
+            task_id=operation_id,
+            attempt=attempt,
+            status="failed",
+            duration_s=time.monotonic() - start,
+        )
+        raise
+
+    try:
+        _send_reset_email(message.recipient, message.reset_link, message.expire_minutes)
+        update_operation(
+            operation_id,
+            status="completed",
+            retry_count=self.request.retries,
+            completed=True,
+        )
+        _log_event(
+            event="password_reset_email_completed",
+            task_id=operation_id,
+            attempt=attempt,
+            status="completed",
+            duration_s=time.monotonic() - start,
+        )
+        return {"status": "completed", "operation_id": operation_id, "attempts": attempt}
+    except Exception:
+        safe_error = "Email provider delivery failed"
+        if self.request.retries >= self.max_retries:
+            update_operation(
+                operation_id,
+                status="failed",
+                retry_count=self.request.retries,
+                error_message=safe_error,
+            )
+            save_dead_letter(operation_id, attempt, safe_error)
+            _log_event(
+                event="password_reset_email_dead_lettered",
+                task_id=operation_id,
+                attempt=attempt,
+                status="failed",
+                duration_s=time.monotonic() - start,
+            )
+            raise
+
+        update_operation(
+            operation_id,
+            status="pending",
+            retry_count=attempt,
+            error_message=safe_error,
+        )
+        countdown = 2 ** self.request.retries
+        _log_event(
+            event="password_reset_email_retrying",
+            task_id=operation_id,
+            attempt=attempt,
+            status="retrying",
+            duration_s=time.monotonic() - start,
+            countdown_s=countdown,
+        )
+        raise self.retry(exc=RuntimeError(safe_error), countdown=countdown)

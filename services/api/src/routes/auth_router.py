@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
 from src.cache import me_cache
 from src.models.profile import Profile, ProfileResponse
-from src.models.user import Department, User
+from src.models.user import Department, User, UserRole
 from src.services.auth_service import create_access_token, get_current_user
 from src.services.password_reset_service import (
     PasswordResetTokenError,
@@ -18,6 +18,7 @@ from src.services.profile_service import get_profile_by_user_id
 from src.services.security import PasswordValidationError, verify_password
 from src.services.user_service import get_user_by_email, update_user_password
 from src.services.audit_log_service import append_event_committed
+from src.services.access_control import require_role
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -56,6 +57,16 @@ class ForgotPasswordRequest(BaseModel):
 
 class ForgotPasswordResponse(BaseModel):
     message: str
+
+
+class PasswordResetTaskStatusResponse(BaseModel):
+    operation_id: str
+    status: str
+    retry_count: int
+    created_at: str
+    updated_at: str
+    completed_at: str | None = None
+    error: str | None = None
 
 
 class ResetPasswordRequest(BaseModel):
@@ -126,13 +137,40 @@ def get_me(current_user: User = Depends(get_current_user)) -> MeResponse:
 
 
 @auth_router.post("/forgot-password", response_model=ForgotPasswordResponse)
-def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=128),
+) -> ForgotPasswordResponse:
     user = get_user_by_email(payload.email.strip())
     if user is not None:
-        issue_password_reset(user)
+        issue_password_reset(user, idempotency_key=idempotency_key)
 
     return ForgotPasswordResponse(
         message="If the email exists, reset instructions have been sent."
+    )
+
+
+@auth_router.get(
+    "/password-reset/tasks/{operation_id}",
+    response_model=PasswordResetTaskStatusResponse,
+)
+def get_password_reset_task_status(
+    operation_id: str,
+    _operator: User = Depends(require_role(UserRole.MANAGER)),
+) -> PasswordResetTaskStatusResponse:
+    from src.services.async_email_service import get_operation
+
+    record = get_operation(operation_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return PasswordResetTaskStatusResponse(
+        operation_id=str(record["operation_id"]),
+        status=str(record["status"]),
+        retry_count=int(record["retry_count"]),
+        created_at=record["created_at"].isoformat(),
+        updated_at=record["updated_at"].isoformat(),
+        completed_at=record["completed_at"].isoformat() if record["completed_at"] else None,
+        error=str(record["last_error"]) if record["last_error"] else None,
     )
 
 

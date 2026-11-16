@@ -155,9 +155,16 @@ services:
     container_name: trackflow-redis
     ports:
       - "127.0.0.1:6379:6379"
-    command: redis-server --maxmemory-policy noeviction
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
     environment:
       <<: *common-env
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     networks:
       - trackflow-net
 
@@ -167,13 +174,14 @@ services:
       context: .
       dockerfile: services/Dockerfile
     container_name: trackflow-worker
-    command: celery -A src.celery_app worker -l info --concurrency=2
+    command: celery -A src.celery_app worker -l info --concurrency=2 --queues=celery,reports,emails
     env_file:
       - .env
     environment:
       <<: *common-env
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - ./services/api:/app
       - ./services/telemetry:/app/telemetry
@@ -215,6 +223,8 @@ networks:
     driver: bridge
 
 volumes:
+  redis_data:
+    name: trackflow_redis_data
   keycloak_data:
     name: trackflow_keycloak_data
   qdrant_data:

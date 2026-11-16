@@ -142,3 +142,24 @@ class DeadLetterRow(SQLModel, table=True):
     error_message: str = Field(nullable=False)
     timestamp: datetime = Field(default_factory=_utcnow, nullable=False)
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class AsyncEmailTaskRow(SQLModel, table=True):
+    """Durable lifecycle/idempotency record for asynchronous emails.
+
+    Deliberately excludes the recipient and secret reset link. The task
+    payload exists only in the protected Celery/Redis transport.
+    """
+
+    __tablename__ = "async_email_tasks"
+
+    operation_id: str = Field(primary_key=True, max_length=36)
+    idempotency_key: str = Field(nullable=False, unique=True, max_length=64)
+    status: str = Field(nullable=False, max_length=16, default="pending", index=True)
+    retry_count: int = Field(nullable=False, default=0)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    processing_started_at: Optional[datetime] = Field(default=None, nullable=True)
+    completed_at: Optional[datetime] = Field(default=None, nullable=True)
+    last_error: Optional[str] = Field(default=None, max_length=500, nullable=True)
+    secret_payload: Optional[str] = Field(default=None, nullable=True)
